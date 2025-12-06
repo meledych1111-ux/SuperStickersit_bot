@@ -1,11 +1,6 @@
 {
   "functions": {
-    "api/webhook.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 30,
-      "memory": 512
-    },
-    "api/convert.js": {
+    "api/index.js": {
       "runtime": "nodejs20.x",
       "maxDuration": 300,
       "memory": 1024
@@ -13,16 +8,8 @@
   },
   "routes": [
     {
-      "src": "/webhook",
-      "dest": "/api/webhook.js"
-    },
-    {
-      "src": "/convert",
-      "dest": "/api/convert.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/api/webhook.js"
+      "dest": "/api/index.js"
     }
   ]
 }
