@@ -2,13 +2,13 @@
   "name": "telegram-video-bot",
   "version": "1.0.0",
   "type": "module",
+  "main": "api/index.js",
   "scripts": {
-    "dev": "node --watch api/webhook.js",
-    "start": "node api/webhook.js"
+    "start": "node api/index.js",
+    "dev": "node --watch api/index.js"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.64.0",
-    "node-fetch": "^3.3.2",
     "form-data": "^4.0.0"
   },
   "engines": {
