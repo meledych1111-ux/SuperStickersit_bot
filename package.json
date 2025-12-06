@@ -1,0 +1,14 @@
+{
+  "name": "telegram-video-bot",
+  "version": "1.0.0",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
