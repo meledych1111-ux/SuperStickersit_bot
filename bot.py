@@ -21,11 +21,15 @@ from io import BytesIO
 
 # Импорт нашего обработчика видео
 from ffmpeg_processor import VideoProcessor
-
 # === КОНФИГУРАЦИЯ ===
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8062458019:AAFY6yl5Ijy-R1_hiyAc25j5dij9IjJMTWY")
-PORT = int(os.getenv("PORT", 10000))
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+import os
+
+# Получаем токен из переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Проверяем что токен установлен
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не установлен! Добавьте в Environment Variables на Render.")
 
 # === ЛОГИРОВАНИЕ ===
 logging.basicConfig(
