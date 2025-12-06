@@ -1,0 +1,17 @@
+{
+  "name": "telegram-video-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch api/webhook.js",
+    "start": "node api/webhook.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0",
+    "node-fetch": "^3.3.2",
+    "form-data": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
