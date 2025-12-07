@@ -1,0 +1,33 @@
+{
+  "name": "video-sticker-bot-pro",
+  "version": "3.0.0",
+  "description": "Telegram bot for converting videos and GIFs to stickers on Replit",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "setup": "node setup.js",
+    "check": "node check.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "video",
+    "gif",
+    "sticker",
+    "replit",
+    "ffmpeg"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0",
+    "node-fetch": "^2.7.0",
+    "form-data": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
