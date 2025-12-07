@@ -1,0 +1,21 @@
+[packages]
+nodejs = "20.x"
+ffmpeg = "6.1"
+libwebp = "latest"
+
+[run]
+command = "npm start"
+
+[env]
+PORT = "3000"
+MAX_VIDEO_SIZE = "10485760"    # 10MB
+MAX_GIF_SIZE = "8388608"       # 8MB
+MAX_DURATION = "5"             # 5 секунд
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["npm", "start"]
+managedPorts = ["3000"]
+public = true
