@@ -1,591 +1,640 @@
-# main.py - Исправленная версия с сохранением файлов
+# main.py - С ЭФФЕКТАМИ СНЕГ, ЗВЕЗДЫ, ЗАМЕДЛЕНИЕ, УСКОРЕНИЕ
 import os
 import sys
 import asyncio
 import tempfile
-import subprocess
 import shutil
+import subprocess
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Tuple, Dict
+import time
+from datetime import datetime
 import uuid
+import random
 
-import aiohttp
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import (
-    Message, FSInputFile,
-    ReplyKeyboardMarkup, KeyboardButton,
-    BufferedInputFile, InlineKeyboardMarkup,
-    InlineKeyboardButton, CallbackQuery
-)
-from aiogram.filters import CommandStart, Command
-from aiogram.enums import ChatAction
+print("=" * 60)
+print("🤖 Telegram Video Sticker Bot")
+print("=" * 60)
 
-# ===== FFMPEG НАСТРОЙКА =====
-def setup_ffmpeg():
-    """Настройка ffmpeg-static"""
-    import os
-    import stat
-    
-    ffmpeg_static = "./ffmpeg-static"
-    
-    if not os.path.exists(ffmpeg_static):
-        print("❌ ffmpeg-static не найден!")
-        return False
-    
-    if not os.access(ffmpeg_static, os.X_OK):
-        os.chmod(ffmpeg_static, stat.S_IRWXU)
-    
-    try:
-        result = subprocess.run([ffmpeg_static, "-version"], 
-                              capture_output=True, 
-                              text=True, 
-                              timeout=10)
-        if result.returncode == 0:
-            version_line = result.stdout.splitlines()[0]
-            print(f"✅ FFmpeg работает: {version_line}")
-            return True
-        else:
-            print(f"❌ FFmpeg ошибка: {result.stderr[:200]}")
-            return False
-    except Exception as e:
-        print(f"❌ Ошибка запуска ffmpeg: {e}")
-        return False
-
-print("🔍 Проверяем ffmpeg-static...")
-if not setup_ffmpeg():
+FFMPEG = shutil.which("ffmpeg")
+if not FFMPEG:
+    print("❌ ffmpeg не найден!")
     sys.exit(1)
 
-# ===== КОНФИГУРАЦИЯ БОТА =====
+print(f"✅ FFmpeg: {FFMPEG}")
+
+try:
+    from aiogram import Bot, Dispatcher, F
+    from aiogram.filters import CommandStart, Command
+    from aiogram.types import (
+        Message, BufferedInputFile,
+        ReplyKeyboardMarkup, KeyboardButton,
+        InlineKeyboardMarkup, InlineKeyboardButton,
+        CallbackQuery
+    )
+    from aiogram.enums import ParseMode, ChatAction
+    print("✅ Aiogram загружен")
+except ImportError as e:
+    print(f"❌ Ошибка импорта: {e}")
+    sys.exit(1)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    print("❌ Ошибка: BOT_TOKEN не установлен!")
-    exit(1)
+    print("❌ BOT_TOKEN не установлен!")
+    sys.exit(1)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== ЭФФЕКТЫ =====
-EFFECTS = {
-    "none": "🎨 Без эффекта",
-    "vibrant": "🌈 Яркие цвета",
-    "vintage": "📻 Винтаж",
-    "blackwhite": "⚫ Черно-белый", 
-    "pixel": "👾 Пиксель-арт",
-    "glitch": "🌀 Глитч",
-    "slowmo": "🐌 Замедление",
-    "fast": "⚡ Ускорение",
-    "reverse": "↪️ Обратное",
-    "mirror": "🪞 Зеркало",
-    "shake": "📳 Дрожание",
-    "zoom": "🔍 Увеличение",
-    "rotate": "🔄 Вращение",
-    "neon": "💡 Неоновый",
-    "vhs": "📼 VHS эффект",
-    "wavy": "🌊 Волны",
-    "blur": "😶‍🌫️ Размытие",
-    "sharpen": "🔪 Резкость"
-}
+MAX_FILE_SIZE = 10 * 1024 * 1024
+TARGET_SIZE = 256 * 1024
 
-# Глобальное хранилище для временных файлов (в памяти)
-temp_storage = {}
+# ===== ХРАНИЛИЩЕ =====
+class FileStorage:
+    def __init__(self):
+        self.storage_dir = Path("./temp_files")
+        self.storage_dir.mkdir(exist_ok=True)
+        self.files = {}
+        print(f"📁 Хранилище: {self.storage_dir.absolute()}")
 
-# ===== ФУНКЦИИ ДЛЯ FFMPEG =====
-async def run_ffmpeg(cmd: list) -> tuple[int, str, str]:
-    """Асинхронный запуск ffmpeg"""
-    def _run():
-        if cmd[0] == "ffmpeg":
-            cmd[0] = "./ffmpeg-static"
-        
-        print(f"🚀 Запускаю ffmpeg...")
-        
-        process = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding='utf-8',
-            errors='ignore',
-            timeout=120
-        )
-        return process.returncode, process.stdout, process.stderr
-    
-    return await asyncio.to_thread(_run)
+    def save(self, user_id: int, file_path: Path) -> str:
+        file_id = str(uuid.uuid4())
+        user_dir = self.storage_dir / str(user_id)
+        user_dir.mkdir(exist_ok=True)
 
-def get_effect_filter(effect: str) -> str:
-    """Получить фильтр для эффекта"""
-    filters = []
-    
-    if effect == "vibrant":
-        filters.append("eq=contrast=1.3:saturation=1.5:brightness=0.05")
-    elif effect == "vintage":
-        filters.append("curves=r='0/0.1 0.5/0.4 1/0.9':g='0/0 0.5/0.3 1/0.8'")
-        filters.append("hue=s=0.8")
-    elif effect == "blackwhite":
-        filters.append("hue=s=0")
-        filters.append("eq=contrast=1.2")
-    elif effect == "pixel":
-        filters.append("scale=128:128:flags=neighbor")
-        filters.append("scale=512:512:flags=neighbor")
-    elif effect == "glitch":
-        filters.append("noise=alls=20:allf=t+u, hue=s=0.5")
-    elif effect == "slowmo":
-        filters.append("setpts=2.0*PTS")
-    elif effect == "fast":
-        filters.append("setpts=0.5*PTS")
-    elif effect == "reverse":
-        filters.append("reverse")
-    elif effect == "mirror":
-        filters.append("crop=iw/2:ih:0:0,split[left][tmp];[tmp]hflip[right];[left][right]hstack")
-    elif effect == "shake":
-        filters.append("crop=iw-10:ih-10:5:5,scale=512:512")
-    elif effect == "zoom":
-        filters.append("zoompan=z='min(zoom+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=512x512")
-    elif effect == "rotate":
-        filters.append("rotate=PI/6:ow=512:oh=512")
-    elif effect == "neon":
-        filters.append("edgedetect=low=0.1:high=0.4")
-        filters.append("hue=s=2")
-    elif effect == "vhs":
-        filters.append("noise=alls=30:allf=t+u, curves=r='0/0 0.1/0.2 0.7/0.6 1/1':g='0/0 0.2/0.3 0.8/0.7 1/1':b='0/0 0.3/0.4 0.9/0.8 1/1'")
-    elif effect == "wavy":
-        filters.append("waveform=display=1")
-    elif effect == "blur":
-        filters.append("boxblur=5:1")
-    elif effect == "sharpen":
-        filters.append("unsharp=5:5:1.0")
-    
-    return ','.join(filters) if filters else "null"
+        saved_path = user_dir / file_id
+        shutil.copy2(file_path, saved_path)
 
-async def create_animated_sticker(input_path: Path, output_path: Path, effect: str = "none") -> tuple[bool, str]:
-    """Создает анимированный стикер (WebP) для Telegram"""
-    try:
-        # Создаем временную папку для промежуточных файлов
-        temp_dir = output_path.parent / "temp"
-        temp_dir.mkdir(exist_ok=True)
-        
-        # Базовые фильтры
-        base_filters = [
-            "scale=512:512:force_original_aspect_ratio=decrease",
-            "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0",
-            "fps=15"  # Оптимальный FPS для анимации
-        ]
-        
-        # Добавляем эффект
-        if effect != "none":
-            effect_filter = get_effect_filter(effect)
-            if effect_filter and effect_filter != "null":
-                base_filters.insert(0, effect_filter)
-        
-        filters = ','.join(base_filters)
-        
-        # Для обратного эффекта нужна особая обработка
-        if effect == "reverse":
-            filters += ",reverse"
-        
-        # Простая команда для создания WebP (не используем сложную палитру)
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i", str(input_path),
-            "-t", "3",  # Макс 3 секунды
-            "-vf", filters,
-            "-loop", "0",
-            "-lossless", "0",
-            "-q:v", "75",
-            "-compression_level", "6",
-            "-preset", "default",
-            "-an",
-            str(output_path)
-        ]
-        
-        code, out, err = await run_ffmpeg(cmd)
-        
-        if code != 0:
-            print(f"FFmpeg ошибка: {err[:500]}")
-            return False, f"Ошибка создания стикера: {err[:100]}"
-        
-        if not output_path.exists():
-            return False, "Файл не создан"
-        
-        # Проверяем и сжимаем если нужно
-        size_kb = output_path.stat().st_size / 1024
-        if size_kb > 256:
-            compressed = await compress_sticker(output_path, output_path)
-            if compressed[0]:
-                size_kb = output_path.stat().st_size / 1024
-            else:
-                return compressed
-        
-        # Очищаем временные файлы
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-        
-        return True, f"✅ Стикер готов!\nРазмер: {size_kb:.1f}KB\nЭффект: {EFFECTS[effect]}"
-        
-    except Exception as e:
-        print(f"Ошибка в create_animated_sticker: {e}")
-        return False, f"Ошибка: {str(e)[:100]}"
+        self.files[file_id] = {
+            'path': saved_path,
+            'user_id': user_id,
+            'time': time.time()
+        }
+        print(f"💾 Файл сохранен: {file_id}")
+        return file_id
 
-async def compress_sticker(input_path: Path, output_path: Path) -> tuple[bool, str]:
-    """Сжимает стикер до <256KB"""
-    try:
-        temp_path = output_path.with_suffix('.compressed.webp')
-        
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i", str(input_path),
-            "-loop", "0",
-            "-lossless", "0",
-            "-q:v", "90",  # Более высокое качество
-            "-compression_level", "6",
-            str(temp_path)
-        ]
-        
-        code, _, err = await run_ffmpeg(cmd)
-        
-        if code == 0 and temp_path.exists():
-            size_kb = temp_path.stat().st_size / 1024
-            if size_kb <= 256:
-                if input_path.exists():
-                    input_path.unlink()
-                temp_path.rename(output_path)
-                return True, f"✅ Стикер сжат до {size_kb:.1f}KB"
-            else:
-                temp_path.unlink()
-                return False, f"❌ Не удалось сжать до 256KB (осталось {size_kb:.1f}KB)"
-        
-        return False, "Не удалось сжать стикер"
-    except Exception as e:
-        return False, f"Ошибка сжатия: {str(e)}"
+    def get(self, file_id: str) -> Path:
+        return self.files[file_id]['path']
 
-def get_effects_keyboard():
-    """Клавиатура для выбора эффектов"""
-    effects = list(EFFECTS.items())
-    keyboard = []
-    
-    # Группируем по 2 в ряд для лучшего отображения
-    for i in range(0, len(effects), 2):
-        row = effects[i:i+2]
-        keyboard.append([
-            InlineKeyboardButton(text=name, callback_data=f"effect_{key}")
-            for key, name in row
-        ])
-    
-    # Добавляем кнопку "Без эффекта" отдельно
-    keyboard.append([
-        InlineKeyboardButton(text="🎨 Без эффекта", callback_data="effect_none"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
-    ])
-    
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-async def save_user_file(user_id: int, file_path: Path) -> str:
-    """Сохраняет файл пользователя и возвращает уникальный ID"""
-    file_id = str(uuid.uuid4())
-    
-    # Создаем папку для пользователя если нет
-    user_dir = Path(f"./temp_files/{user_id}")
-    user_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Сохраняем файл
-    saved_path = user_dir / f"{file_id}{file_path.suffix}"
-    shutil.copy2(file_path, saved_path)
-    
-    # Сохраняем в глобальное хранилище
-    temp_storage[user_id] = {
-        'file_id': file_id,
-        'path': str(saved_path),
-        'timestamp': asyncio.get_event_loop().time()
-    }
-    
-    return file_id
-
-async def get_user_file(user_id: int) -> Optional[Path]:
-    """Получает сохраненный файл пользователя"""
-    if user_id not in temp_storage:
-        return None
-    
-    data = temp_storage[user_id]
-    file_path = Path(data['path'])
-    
-    if file_path.exists():
-        # Проверяем не устарел ли файл (10 минут)
-        current_time = asyncio.get_event_loop().time()
-        if current_time - data['timestamp'] < 600:  # 10 минут
-            return file_path
-        else:
-            # Удаляем устаревший файл
+    def delete(self, file_id: str):
+        if file_id in self.files:
             try:
-                file_path.unlink()
+                path = self.files[file_id]['path']
+                if path.exists():
+                    path.unlink()
             except:
                 pass
-            del temp_storage[user_id]
-    
-    return None
+            del self.files[file_id]
 
-async def cleanup_user_file(user_id: int):
-    """Очищает файлы пользователя"""
-    if user_id in temp_storage:
-        data = temp_storage[user_id]
-        file_path = Path(data['path'])
-        try:
-            if file_path.exists():
+storage = FileStorage()
+
+# ===== ЭФФЕКТЫ =====
+EFFECTS = {
+    "none": {
+        "name": "🎨 Без эффекта",
+        "filter": ""
+    },
+    "slowmo": {
+        "name": "🐌 Замедление",
+        "filter": "setpts=2.0*PTS"  # В 2 раза медленнее
+    },
+    "fastmo": {
+        "name": "⚡ Ускорение", 
+        "filter": "setpts=0.5*PTS"  # В 2 раза быстрее
+    },
+    "snow": {
+        "name": "❄️ Снегопад",
+        "filter": "color=c=white@0.1:s=512x512,geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=rgba"
+    },
+    "stars": {
+        "name": "✨ Звёзды",
+        "filter": "color=c=black:s=512x512,noise=alls=20:allf=t+u,curves=preset=lighter"
+    }
+}
+
+# ===== ФУНКЦИИ ДЛЯ СОЗДАНИЯ СТИКЕРОВ =====
+async def create_sticker_with_effect(input_path: Path, output_path: Path, effect: str = "none") -> Tuple[bool, str, int]:
+    """
+    Создает WebM стикер с эффектом
+    """
+    try:
+        print(f"🎬 Создаю стикер с эффектом: {EFFECTS[effect]['name']}")
+
+        # Получаем информацию о видео
+        info = await get_video_info(input_path)
+        duration = min(info['duration'], 2.8)
+        fps = info['fps']
+
+        print(f"   📊 Исходное: {info['width']}x{info['height']}, {duration:.1f}с, {fps:.1f}fps")
+
+        # Базовый фильтр для Telegram
+        base_filter = "scale=512:512:force_original_aspect_ratio=decrease," \
+                     "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0," \
+                     f"fps=30,format=yuva420p"
+
+        # Добавляем эффект
+        effect_filter = EFFECTS[effect]['filter']
+        if effect_filter:
+            # Для снега и звёзд создаем отдельный слой и накладываем
+            if effect in ["snow", "stars"]:
+                # Создаем видео с эффектом
+                effect_video = input_path.with_suffix(f'.{effect}.mp4')
+                await create_effect_video(effect, effect_video, duration)
+
+                # Комбинируем с основным видео
+                filter_complex = f"[0:v]{base_filter}[main];" \
+                               f"[1:v]scale=512:512,format=yuva420p[effect];" \
+                               f"[main][effect]overlay=format=auto"
+
+                cmd = [
+                    FFMPEG, "-y",
+                    "-i", str(input_path),
+                    "-i", str(effect_video),
+                    "-t", str(duration),
+                    "-an",
+                    "-filter_complex", filter_complex,
+                    "-c:v", "libvpx",
+                    "-b:v", "150k",
+                    "-crf", "32",
+                    "-deadline", "good",
+                    "-auto-alt-ref", "0",
+                    "-f", "webm",
+                    str(output_path)
+                ]
+
+                # Удаляем временный файл эффекта
+                try:
+                    effect_video.unlink()
+                except:
+                    pass
+
+            else:
+                # Для других эффектов просто добавляем фильтр
+                video_filter = f"{base_filter},{effect_filter}"
+                cmd = [
+                    FFMPEG, "-y",
+                    "-i", str(input_path),
+                    "-t", str(duration),
+                    "-an",
+                    "-vf", video_filter,
+                    "-c:v", "libvpx",
+                    "-b:v", "150k",
+                    "-crf", "32",
+                    "-deadline", "good",
+                    "-auto-alt-ref", "0",
+                    "-f", "webm",
+                    str(output_path)
+                ]
+        else:
+            # Без эффекта
+            cmd = [
+                FFMPEG, "-y",
+                "-i", str(input_path),
+                "-t", str(duration),
+                "-an",
+                "-vf", base_filter,
+                "-c:v", "libvpx",
+                "-b:v", "150k",
+                "-crf", "32",
+                "-deadline", "good", 
+                "-auto-alt-ref", "0",
+                "-f", "webm",
+                str(output_path)
+            ]
+
+        print(f"   🛠️ Запускаю конвертацию...")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0 and output_path.exists():
+            size_kb = output_path.stat().st_size / 1024
+            print(f"   ✅ Стикер создан: {size_kb:.1f}KB")
+
+            # Оптимизируем если нужно
+            if size_kb > 200:
+                print(f"   ⚙️ Оптимизирую размер...")
+                await optimize_webm(output_path)
+                size_kb = output_path.stat().st_size / 1024
+
+            # Проверяем параметры
+            output_info = await get_video_info(output_path)
+            checks = {
+                "Размер ≤256KB": size_kb <= 256,
+                "FPS=30": abs(output_info['fps'] - 30) < 1,
+                "Разрешение 512x512": output_info['width'] == 512 and output_info['height'] == 512
+            }
+
+            status = "✅" if all(checks.values()) and size_kb <= 256 else "⚠️"
+
+            message = f"{status} <b>Стикер создан!</b>\n\n"
+            message += f"🎭 <b>Эффект:</b> {EFFECTS[effect]['name']}\n"
+            message += f"📦 <b>Размер:</b> {size_kb:.1f}KB / 256KB\n"
+            message += f"📏 <b>Разрешение:</b> {output_info['width']}x{output_info['height']}\n"
+            message += f"🎬 <b>FPS:</b> {output_info['fps']:.1f}\n"
+            message += f"⏱ <b>Длительность:</b> {output_info['duration']:.1f}с\n"
+
+            if all(checks.values()) and size_kb <= 256:
+                message += "\n🎉 <b>Готов к добавлению в Telegram!</b>"
+            else:
+                message += "\n⚠️ <b>Возможны проблемы с размером или параметрами</b>"
+
+            return True, message, int(size_kb)
+
+        error = stderr.decode('utf-8', errors='ignore')
+        print(f"   ❌ Ошибка: {error[:200]}")
+        return False, "❌ Не удалось создать стикер", 0
+
+    except Exception as e:
+        print(f"   🔥 Исключение: {e}")
+        return False, f"❌ Ошибка: {str(e)[:100]}", 0
+
+async def create_effect_video(effect: str, output_path: Path, duration: float):
+    """Создает видео с эффектом (снег, звёзды)"""
+    try:
+        if effect == "snow":
+            # Создаем снегопад
+            cmd = [
+                FFMPEG, "-y",
+                "-f", "lavfi",
+                "-i", f"color=c=white@0:s=512x512:d={duration},geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=rgba",
+                "-t", str(duration),
+                "-c:v", "libx264",
+                "-pix_fmt", "yuva420p",
+                str(output_path)
+            ]
+        elif effect == "stars":
+            # Создаем звёзды
+            cmd = [
+                FFMPEG, "-y",
+                "-f", "lavfi",
+                "-i", f"color=c=black:s=512x512:d={duration},noise=alls=20:allf=t+u,curves=preset=lighter",
+                "-t", str(duration),
+                "-c:v", "libx264",
+                "-pix_fmt", "yuva420p",
+                str(output_path)
+            ]
+        else:
+            return False
+
+        process = await asyncio.create_subprocess_exec(*cmd)
+        await process.wait()
+        return process.returncode == 0
+
+    except:
+        return False
+
+async def optimize_webm(file_path: Path) -> bool:
+    """Оптимизация размера WebM"""
+    try:
+        temp_path = file_path.with_suffix('.opt.webm')
+
+        cmd = [
+            FFMPEG, "-y",
+            "-i", str(file_path),
+            "-t", "2.5",
+            "-an",
+            "-vf", "scale=384:384,fps=30",
+            "-c:v", "libvpx",
+            "-b:v", "80k",
+            "-crf", "38",
+            "-deadline", "good",
+            "-auto-alt-ref", "0",
+            "-f", "webm",
+            str(temp_path)
+        ]
+
+        process = await asyncio.create_subprocess_exec(*cmd)
+        await process.wait()
+
+        if temp_path.exists():
+            new_size = temp_path.stat().st_size / 1024
+            if new_size <= 256:
                 file_path.unlink()
-        except:
-            pass
-        
-        # Удаляем папку пользователя если пуста
-        user_dir = file_path.parent
-        try:
-            if user_dir.exists() and not any(user_dir.iterdir()):
-                user_dir.rmdir()
-        except:
-            pass
-        
-        del temp_storage[user_id]
+                temp_path.rename(file_path)
+                return True
+            else:
+                temp_path.unlink()
+        return False
+    except:
+        return False
+
+async def get_video_info(file_path: Path) -> Dict:
+    """Получает информацию о видео"""
+    try:
+        cmd = [FFMPEG, "-i", str(file_path), "-hide_banner"]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+        output = stderr.decode('utf-8', errors='ignore')
+
+        info = {
+            'duration': 0,
+            'width': 0,
+            'height': 0,
+            'fps': 0,
+            'codec': 'unknown',
+            'pix_fmt': 'unknown'
+        }
+
+        for line in output.split('\n'):
+            if 'Duration:' in line:
+                try:
+                    dur_str = line.split('Duration:')[1].split(',')[0].strip()
+                    h, m, s = dur_str.split(':')
+                    info['duration'] = int(h)*3600 + int(m)*60 + float(s)
+                except:
+                    pass
+            elif 'Video:' in line:
+                parts = line.split('Video:')[1].split(',')
+                info['codec'] = parts[0].strip()
+
+                # Ищем разрешение
+                for part in parts:
+                    if 'x' in part and '[' not in part:
+                        try:
+                            w, h = part.strip().split('x')
+                            info['width'] = int(w)
+                            info['height'] = int(h)
+                        except:
+                            pass
+
+                # Ищем FPS
+                for part in parts:
+                    if 'fps' in part:
+                        try:
+                            fps_str = part.split('fps')[0].strip()
+                            info['fps'] = float(fps_str)
+                        except:
+                            pass
+
+                # Ищем формат пикселей
+                for fmt in ['yuva420p', 'yuv420p', 'rgba']:
+                    if fmt in line.lower():
+                        info['pix_fmt'] = fmt
+                        break
+
+        return info
+    except:
+        return {'duration': 0, 'width': 0, 'height': 0, 'fps': 0, 'codec': 'unknown', 'pix_fmt': 'unknown'}
 
 # ===== ОБРАБОТЧИКИ =====
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def start(message: Message):
     await message.answer(
-        "🎬 *Animated Sticker Bot*\n\n"
-        "Я создаю анимированные стикеры из видео и GIF!\n\n"
-        "Как использовать:\n"
-        "1. 📤 Отправь мне видео/GIF\n"
-        "2. ✨ Выбери эффект\n"
-        "3. 📥 Получи WebP стикер\n"
-        "4. 📚 Добавь в стикерпак\n\n"
-        "Готов создать крутой стикер? Отправь видео! 🚀",
-        parse_mode="Markdown",
+        "🎬 <b>Video Sticker Bot с эффектами!</b>\n\n"
+        "<b>✨ Доступные эффекты:</b>\n"
+        "• 🐌 Замедление\n"
+        "• ⚡ Ускорение\n"
+        "• ❄️ Снегопад\n"
+        "• ✨ Звёзды\n"
+        "• 🎨 Без эффекта\n\n"
+        "<b>✅ Соответствует Telegram:</b>\n"
+        "• WebM с VP8 кодеком\n"
+        "• 30 кадров/сек\n"
+        "• 512x512 пикселей\n"
+        "• До 256 КБ\n"
+        "• Без звука\n\n"
+        "<b>📤 Отправь видео или GIF:</b>",
+        parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="📤 Отправить видео")],
-                [KeyboardButton(text="✨ Список эффектов"), KeyboardButton(text="ℹ️ Помощь")]
+                [KeyboardButton(text="📤 ОТПРАВИТЬ ВИДЕО")],
+                [KeyboardButton(text="✨ ЭФФЕКТЫ"), KeyboardButton(text="🆘 ПОМОЩЬ")]
             ],
             resize_keyboard=True
         )
     )
 
-@dp.message(Command("effects"))
-@dp.message(F.text == "✨ Список эффектов")
-async def show_all_effects(message: Message):
-    effects_text = "✨ *Доступные эффекты:*\n\n"
-    for key, name in EFFECTS.items():
-        effects_text += f"{name}\n"
-    
-    effects_text += "\nОтправь видео и выбери эффект!"
-    await message.answer(effects_text, parse_mode="Markdown")
+@dp.message(F.text == "📤 ОТПРАВИТЬ ВИДЕО")
+async def send_video(message: Message):
+    await message.answer(
+        "📤 <b>Отправь мне видео или GIF</b>\n\n"
+        "<i>• До 10MB\n"
+        "• До 5 секунд\n"
+        "• Любой формат\n\n"
+        "После загрузки выбери эффект!</i>",
+        parse_mode=ParseMode.HTML
+    )
 
-@dp.message(F.text == "ℹ️ Помощь")
+@dp.message(F.text == "✨ ЭФФЕКТЫ")
+async def show_effects(message: Message):
+    effects_list = "\n".join([f"• {effect['name']}" for effect in EFFECTS.values()])
+    await message.answer(
+        f"✨ <b>Доступные эффекты:</b>\n\n{effects_list}\n\n"
+        f"<i>Отправь видео, затем выбери эффект</i>",
+        parse_mode=ParseMode.HTML
+    )
+
+@dp.message(F.text == "🆘 ПОМОЩЬ")
 async def show_help(message: Message):
     await message.answer(
-        "📋 *Как использовать бота:*\n\n"
-        "1. *Отправь видео/GIF* (до 50MB)\n"
-        "2. *Выбери эффект* из списка\n"
-        "3. *Получи WebP файл* анимированного стикера\n"
-        "4. *Сохрани файл* и добавь в стикерпак\n\n"
-        "📌 *Требования Telegram:*\n"
-        "• Формат: WebP (анимированный)\n"
-        "• Размер: 512×512 пикселей\n"
-        "• Вес: до 256KB\n"
-        "• Длительность: до 3 секунд\n\n"
-        "🎯 *Как добавить в стикерпак:*\n"
-        "1. Сохрани полученный файл\n"
-        "2. Напиши @Stickers\n"
-        "3. Создай новый стикерпак\n"
-        "4. Загрузи как анимированный стикер\n\n"
-        "Готов творить? Отправь видео! 🎥",
-        parse_mode="Markdown"
+        "🆘 <b>Как использовать:</b>\n\n"
+        "1. <b>Отправь видео/GIF</b>\n"
+        "2. <b>Выбери эффект</b>\n"
+        "3. <b>Получи WebM файл</b>\n"
+        "4. <b>Сохрани файл</b>\n"
+        "5. <b>Напиши @Stickers</b>\n"
+        "6. <b>/newpack → название → эмодзи</b>\n"
+        "7. <b>Загрузи файл</b>\n\n"
+        "<i>✅ Файлы соответствуют требованиям Telegram</i>",
+        parse_mode=ParseMode.HTML
     )
 
-@dp.message(F.text == "📤 Отправить видео")
-async def prompt_upload(message: Message):
-    await message.answer("📹 Отправь мне видео (MP4, MOV, AVI) или GIF")
-
-@dp.message(F.video | F.animation | (F.document & F.document.mime_type.startswith("video/")))
-async def handle_video(message: Message):
-    await bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_VIDEO)
-    status_msg = await message.answer("⏳ Скачиваю файл...")
-    
+@dp.message(F.video | F.animation | F.document)
+async def handle_media(message: Message):
+    """Шаг 1: Получение видео"""
     try:
-        # Скачиваем файл во временную папку
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            
-            if message.video:
-                file_id = message.video.file_id
-                input_path = tmpdir / "video.mp4"
-            elif message.animation:
-                file_id = message.animation.file_id
-                input_path = tmpdir / "animation.gif"
-            elif message.document:
-                file_id = message.document.file_id
-                # Определяем расширение
-                mime = message.document.mime_type
-                if "gif" in mime:
-                    ext = ".gif"
-                elif "webm" in mime:
-                    ext = ".webm"
-                else:
-                    ext = ".mp4"
-                input_path = tmpdir / f"video{ext}"
-            else:
-                await message.answer("❌ Неподдерживаемый формат файла")
-                return
-            
+        await bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_VIDEO)
+        status_msg = await message.answer("📥 <i>Скачиваю файл...</i>", parse_mode=ParseMode.HTML)
+
+        # Определяем файл
+        if message.video:
+            file_id = message.video.file_id
+            file_size = message.video.file_size or 0
+            ext = ".mp4"
+        elif message.animation:
+            file_id = message.animation.file_id
+            file_size = message.animation.file_size or 0
+            ext = ".gif"
+        else:
+            file_id = message.document.file_id
+            file_size = message.document.file_size or 0
+            ext = ".mp4"
+
+        # Проверка размера
+        if file_size > MAX_FILE_SIZE:
+            await status_msg.edit_text(
+                f"❌ <b>Файл слишком большой!</b>\n"
+                f"Максимум: {MAX_FILE_SIZE/1024/1024:.0f}MB\n"
+                f"Ваш файл: {file_size/1024/1024:.1f}MB",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        # Скачиваем
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            input_path = Path(tmp.name)
             file = await bot.get_file(file_id)
-            await bot.download_file(file.file_path, input_path)
-            
-            # Проверяем размер
-            file_size = input_path.stat().st_size
-            if file_size > 50 * 1024 * 1024:
-                await message.answer("❌ Файл слишком большой (максимум 50MB)")
-                return
-            
-            if file_size < 1024:
-                await message.answer("❌ Файл слишком маленький")
-                return
-            
-            # Сохраняем файл
-            await save_user_file(message.from_user.id, input_path)
-            
-            await status_msg.delete()
-            
-            # Показываем клавиатуру с эффектами
-            keyboard = get_effects_keyboard()
-            await message.answer(
-                "✨ *Отлично! Теперь выбери эффект:*\n\n"
-                "Или нажми '🎨 Без эффекта' для чистого стикера",
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-            
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при загрузке файла: {str(e)[:200]}")
-        print(f"Error in handle_video: {e}")
+            await bot.download_file(file.file_path, str(input_path))
 
-@dp.callback_query(F.data.startswith("effect_"))
-async def handle_effect_selection(callback: CallbackQuery):
-    effect_key = callback.data.replace("effect_", "")
-    
-    if effect_key == "cancel":
-        await callback.answer("❌ Отменено")
-        await callback.message.delete()
-        await cleanup_user_file(callback.from_user.id)
-        return
-    
-    if effect_key not in EFFECTS:
-        await callback.answer("❌ Неизвестный эффект")
-        return
-    
-    effect_name = EFFECTS[effect_key]
-    await callback.answer(f"Выбран: {effect_name}")
-    
-    # Получаем сохраненный файл
-    input_path = await get_user_file(callback.from_user.id)
-    
-    if not input_path or not input_path.exists():
-        await callback.message.answer("❌ Файл не найден или устарел. Отправь видео снова.")
-        return
-    
-    # Создаем стикер
-    processing_msg = await callback.message.answer(f"🎨 Создаю стикер с эффектом: {effect_name}...")
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        output_path = tmpdir / f"sticker_{effect_key}.webp"
-        
-        try:
-            success, result_msg = await create_animated_sticker(
-                input_path, 
-                output_path, 
-                effect_key
-            )
-            
-            if success and output_path.exists():
-                # Читаем и отправляем файл
-                with open(output_path, 'rb') as f:
-                    sticker_data = f.read()
-                
-                input_file = BufferedInputFile(sticker_data, filename=f"sticker_{effect_key}.webp")
-                
-                await bot.send_document(
-                    chat_id=callback.message.chat.id,
-                    document=input_file,
-                    caption=result_msg
-                )
-                
-                # Инструкция
-                instructions = (
-                    "\n\n📌 *Как добавить в стикерпак:*\n"
-                    "1. Сохрани этот файл\n"
-                    "2. Напиши @Stickers\n"
-                    "3. Выбери 'Новый стикерпак'\n"
-                    "4. Загрузи этот файл\n"
-                    "5. Выбери эмодзи для стикера\n\n"
-                    "Готово! 🎉"
-                )
-                await callback.message.answer(instructions, parse_mode="Markdown")
-                
-            else:
-                await callback.message.answer(f"❌ {result_msg}")
-            
-            await processing_msg.delete()
-            
-        except Exception as e:
-            await callback.message.answer(f"❌ Ошибка при создании стикера: {str(e)[:200]}")
-            print(f"Error in handle_effect_selection: {e}")
-    
-    # Очищаем файлы пользователя
-    await cleanup_user_file(callback.from_user.id)
+        print(f"📥 Файл скачан: {file_size/1024:.1f}KB")
 
-@dp.message()
-async def handle_other(message: Message):
-    await message.answer(
-        "Отправь мне видео или GIF чтобы создать анимированный стикер!\n\n"
-        "Используй кнопки меню:",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📤 Отправить видео")],
-                [KeyboardButton(text="✨ Список эффектов"), KeyboardButton(text="ℹ️ Помощь")]
-            ],
-            resize_keyboard=True
+        # ✅ СОХРАНЯЕМ ФАЙЛ
+        saved_id = storage.save(message.from_user.id, input_path)
+
+        await status_msg.edit_text(
+            "✅ <b>Файл получен!</b>\n\n"
+            "✨ <b>Выбери эффект:</b>",
+            parse_mode=ParseMode.HTML
         )
-    )
 
-# ===== ОЧИСТКА ВРЕМЕННЫХ ФАЙЛОВ ПРИ СТАРТЕ =====
-def cleanup_old_files():
-    """Очистка старых временных файлов при запуске"""
-    temp_dir = Path("./temp_files")
-    if temp_dir.exists():
+        # Создаем кнопки с эффектами
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=EFFECTS["none"]["name"], 
+                                   callback_data=f"effect_none_{saved_id}"),
+                InlineKeyboardButton(text=EFFECTS["slowmo"]["name"], 
+                                   callback_data=f"effect_slowmo_{saved_id}")
+            ],
+            [
+                InlineKeyboardButton(text=EFFECTS["fastmo"]["name"], 
+                                   callback_data=f"effect_fastmo_{saved_id}"),
+                InlineKeyboardButton(text=EFFECTS["snow"]["name"], 
+                                   callback_data=f"effect_snow_{saved_id}")
+            ],
+            [
+                InlineKeyboardButton(text=EFFECTS["stars"]["name"], 
+                                   callback_data=f"effect_stars_{saved_id}")
+            ]
+        ])
+
+        await message.answer("Нажми на эффект для применения:", reply_markup=keyboard)
+        await status_msg.delete()
+
+        # Удаляем временный файл скачивания
         try:
-            shutil.rmtree(temp_dir)
-            print("🧹 Очищены старые временные файлы")
+            os.unlink(input_path)
         except:
             pass
 
+    except Exception as e:
+        await message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
+        print(f"❌ Ошибка: {e}")
+
+@dp.callback_query(F.data.startswith("effect_"))
+async def handle_effect(callback: CallbackQuery):
+    """Шаг 2: Обработка выбранного эффекта"""
+    try:
+        # Парсим callback data
+        parts = callback.data.split("_")
+        if len(parts) < 3:
+            await callback.answer("❌ Ошибка данных")
+            return
+
+        effect = parts[1]
+        file_id = "_".join(parts[2:])
+
+        if effect not in EFFECTS:
+            await callback.answer("❌ Неизвестный эффект")
+            return
+
+        effect_name = EFFECTS[effect]["name"]
+        await callback.answer(f"Выбран: {effect_name}")
+
+        # Получаем сохраненный файл
+        try:
+            input_path = storage.get(file_id)
+        except:
+            await callback.message.answer("❌ Файл не найден. Отправь видео снова.")
+            return
+
+        processing_msg = await callback.message.answer(
+            f"🎬 <i>Создаю стикер с эффектом...</i>\n"
+            f"<b>Эффект:</b> {effect_name}",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Создаем WebM с эффектом
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_out:
+            output_path = Path(tmp_out.name)
+
+            success, result, size_kb = await create_sticker_with_effect(input_path, output_path, effect)
+
+            if success:
+                # Отправляем файл
+                with open(output_path, 'rb') as f:
+                    webm_data = f.read()
+
+                filename = f"sticker_{effect}_{int(time.time())}.webm"
+
+                await processing_msg.delete()
+
+                await bot.send_document(
+                    callback.message.chat.id,
+                    document=BufferedInputFile(webm_data, filename=filename),
+                    caption=result,
+                    parse_mode=ParseMode.HTML
+                )
+
+                # Инструкция по добавлению
+                if size_kb <= 256:
+                    await callback.message.answer(
+                        "💡 <b>Как добавить в Telegram:</b>\n\n"
+                        "1. Сохрани этот файл\n"
+                        "2. Напиши @Stickers\n"
+                        "3. /newpack → название → эмодзи\n"
+                        "4. Загрузи файл\n\n"
+                        "<i>✅ Файл готов к использованию!</i>",
+                        parse_mode=ParseMode.HTML
+                    )
+            else:
+                await callback.message.answer(result, parse_mode=ParseMode.HTML)
+
+            await processing_msg.delete()
+
+            # Очистка
+            try:
+                os.unlink(output_path)
+                storage.delete(file_id)  # Удаляем сохраненный файл
+            except:
+                pass
+
+    except Exception as e:
+        await callback.message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
+        print(f"❌ Ошибка эффекта: {e}")
+
 # ===== ЗАПУСК =====
 async def main():
-    print("=" * 50)
-    print("🤖 Telegram Animated Sticker Bot")
-    print("=" * 50)
-    
-    # Очищаем старые файлы
-    cleanup_old_files()
-    
-    try:
-        me = await bot.get_me()
-        print(f"✅ Бот: @{me.username}")
-        print(f"✅ Имя: {me.full_name}")
-        print(f"✨ Эффектов: {len(EFFECTS)}")
-        print(f"👤 ID: {me.id}")
-    except Exception as e:
-        print(f"⚠️ Не удалось получить информацию о боте: {e}")
-    
-    print("🚀 Запускаю бота...")
+    print("\n" + "=" * 60)
+    print("🚀 Бот запущен с эффектами!")
+    print("=" * 60)
+    print("✨ Доступные эффекты:")
+    print("   • 🐌 Замедление (2x медленнее)")
+    print("   • ⚡ Ускорение (2x быстрее)")
+    print("   • ❄️ Снегопад (анимированный)")
+    print("   • ✨ Звёзды (анимированные)")
+    print("   • 🎨 Без эффекта")
+    print("=" * 60)
+    print("🎯 Параметры Telegram:")
+    print("   • VP8 кодек (libvpx)")
+    print("   • 30 FPS (обязательно)")
+    print("   • 512x512 пикселей")
+    print("   • ≤256KB размер")
+    print("=" * 60)
+
+    me = await bot.get_me()
+    print(f"🤖 Бот: @{me.username}")
+    print("✅ Готов к работе! Отправь видео и выбери эффект")
+    print("=" * 60)
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
@@ -593,12 +642,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
-        # Очищаем временные файлы при выходе
-        temp_dir = Path("./temp_files")
-        if temp_dir.exists():
-            try:
-                shutil.rmtree(temp_dir)
-            except:
-                pass
-    except Exception as e:
-        print(f"\n❌ Критическая ошибка: {e}")
+        # Очистка временных файлов
+        if Path("./temp_files").exists():
+            shutil.rmtree("./temp_files")
+            print("🧹 Временные файлы удалены")
