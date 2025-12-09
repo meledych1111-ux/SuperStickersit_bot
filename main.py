@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# main.py - Video Sticker Bot с исправленными путями
+# main.py - Video Sticker Bot с УПРОЩЕННЫМИ рабочими эффектами
 import os
 import sys
 import asyncio
@@ -15,11 +15,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
 import atexit
 import signal
-import json
-import subprocess
+import random
 
 print("=" * 60)
-print("🤖 Video Sticker Bot 2.9s - РАБОЧАЯ ВЕРСИЯ")
+print("🎬 Video Sticker Bot 2.9s - РАБОЧАЯ ВЕРСИЯ")
 print("=" * 60)
 
 # ===== НАСТРОЙКА ЛОГГИРОВАНИЯ =====
@@ -36,7 +35,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain; charset=utf-8')
         self.end_headers()
-        response = f"🤖 Video Sticker Bot v2.9\n⏰ {datetime.now().strftime('%H:%M:%S')}\n✅ Active"
+        response = f"🎬 Video Sticker Bot v2.9\n⏰ {datetime.now().strftime('%H:%M:%S')}"
         self.wfile.write(response.encode('utf-8'))
 
     def log_message(self, format, *args):
@@ -45,7 +44,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
 def run_keep_alive():
     """Запуск keep-alive в отдельном потоке"""
     try:
-        server = HTTPServer(('0.0.0.0', 3000), KeepAliveHandler)  # Изменен порт на 3000
+        server = HTTPServer(('0.0.0.0', 3000), KeepAliveHandler)
         logger.info("🌐 Keep-alive сервер запущен на порту 3000")
         server.serve_forever()
     except Exception as e:
@@ -79,7 +78,7 @@ try:
         Message, BufferedInputFile,
         ReplyKeyboardMarkup, KeyboardButton,
         InlineKeyboardMarkup, InlineKeyboardButton,
-        CallbackQuery, FSInputFile
+        CallbackQuery
     )
     from aiogram.enums import ParseMode, ChatAction
     from aiogram.client.session.aiohttp import AiohttpSession
@@ -111,7 +110,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 TARGET_SIZE = 256 * 1024  # 256KB
 STICKER_DURATION = 2.9  # 2.9 секунды
 
-# ===== ХРАНИЛИЩЕ С ИСПРАВЛЕННЫМИ ПУТЯМИ =====
+# ===== ХРАНИЛИЩЕ =====
 class FileStorage:
     def __init__(self):
         self.storage_dir = Path("./temp_files")
@@ -121,11 +120,9 @@ class FileStorage:
         logger.info(f"📁 Хранилище создано: {self.storage_dir.absolute()}")
 
     def save(self, user_id: int, file_path: Path) -> str:
-        """Сохраняет файл и возвращает его ID"""
         file_id = str(uuid.uuid4())
         user_dir = self.storage_dir / str(user_id)
-        user_dir.mkdir(parents=True, exist_ok=True)  # Важно: parents=True!
-
+        user_dir.mkdir(parents=True, exist_ok=True)
         saved_path = user_dir / f"{file_id}{file_path.suffix}"
         shutil.copy2(file_path, saved_path)
 
@@ -135,49 +132,110 @@ class FileStorage:
             'time': time.time(),
             'size': saved_path.stat().st_size
         }
-        logger.info(f"💾 Файл сохранен: {file_id} -> {saved_path}")
+        logger.info(f"💾 Файл сохранен: {file_id}")
         return file_id
 
     def get(self, file_id: str) -> Optional[Path]:
-        """Возвращает путь к файлу"""
         if file_id in self.files:
             path = self.files[file_id]['path']
             if path.exists():
                 return path
-            else:
-                logger.error(f"Файл не существует: {path}")
         return None
 
     def delete(self, file_id: str):
-        """Удаляет файл"""
         if file_id in self.files:
             try:
                 path = self.files[file_id]['path']
                 if path.exists():
                     path.unlink()
-                    logger.info(f"🗑️ Удален: {path}")
-            except Exception as e:
-                logger.error(f"Ошибка удаления {file_id}: {e}")
+            except:
+                pass
             del self.files[file_id]
 
 storage = FileStorage()
 
-# ===== ПРОСТЫЕ ЭФФЕКТЫ =====
+# ===== УПРОЩЕННЫЕ РАБОЧИЕ ЭФФЕКТЫ =====
 VIDEO_EFFECTS = {
-    "none": {"name": "🎬 Оригинал", "filter": "", "description": "Без эффектов"},
-    "slowmo": {"name": "🐌 Замедление", "filter": "setpts=1.5*PTS", "description": "Замедленное видео"},
-    "fastmo": {"name": "⚡ Ускорение", "filter": "setpts=0.7*PTS", "description": "Ускоренное видео"},
-    "vibrant": {"name": "🌈 Яркие цвета", "filter": "eq=saturation=1.3:contrast=1.1", "description": "Более яркие цвета"},
-    "vintage": {"name": "📻 Винтаж", "filter": "curves=preset=vintage", "description": "Винтажный эффект"}
+    "none": {
+        "name": "🎬 Оригинал",
+        "filter": "",
+        "description": "Без эффектов"
+    },
+    "slowmo": {
+        "name": "🐌 Замедление",
+        "filter": "setpts=1.5*PTS",
+        "description": "Замедленное видео"
+    },
+    "fastmo": {
+        "name": "⚡ Ускорение",
+        "filter": "setpts=0.7*PTS",
+        "description": "Ускоренное видео"
+    },
+    "vibrant": {
+        "name": "🌈 Яркие цвета",
+        "filter": "eq=saturation=1.2",
+        "description": "Усиленные цвета"
+    },
+    "vintage": {
+        "name": "📻 Винтаж",
+        "filter": "curves=preset=vintage",
+        "description": "Винтажный эффект"
+    }
 }
 
 # ===== ПРОСТЫЕ РАМКИ =====
-FRAME_EFFECTS = {
-    "none": {"name": "🖼️ Без рамки", "filter": "", "description": "Без рамки"},
-    "fire": {"name": "🔥 Огненная", "filter": "drawbox=x=0:y=0:w=512:h=10:c=red:t=fill,drawbox=x=0:y=502:w=512:h=10:c=orange:t=fill,drawbox=x=0:y=0:w=10:h=512:c=yellow:t=fill,drawbox=x=502:y=0:w=10:h=512:c=red:t=fill", "description": "Огненная рамка"},
-    "neon": {"name": "💡 Неоновая", "filter": "drawbox=x=0:y=0:w=512:h=5:c=cyan:t=fill,drawbox=x=0:y=507:w=512:h=5:c=cyan:t=fill,drawbox=x=0:y=0:w=5:h=512:c=cyan:t=fill,drawbox=x=507:y=0:w=5:h=512:c=cyan:t=fill", "description": "Неоновая рамка"},
-    "rainbow": {"name": "🌈 Радужная", "filter": "drawbox=x=0:y=0:w=512:h=15:c=red:t=fill,drawbox=x=0:y=497:w=512:h=15:c=blue:t=fill,drawbox=x=0:y=0:w=15:h=512:c=green:t=fill,drawbox=x=497:y=0:w=15:h=512:c=yellow:t=fill", "description": "Радужная рамка"}
+FRAMES = {
+    "none": {
+        "name": "🖼️ Без рамки",
+        "filter": "",
+        "description": "Без рамки"
+    },
+    "fire": {
+        "name": "🔥 Огненная",
+        "filter": "drawbox=x=0:y=0:w=512:h=15:c=red@0.8:t=fill,"
+                  "drawbox=x=0:y=497:w=512:h=15:c=orange@0.7:t=fill,"
+                  "drawbox=x=0:y=0:w=15:h=512:c=yellow@0.6:t=fill,"
+                  "drawbox=x=497:y=0:w=15:h=512:c=red@0.8:t=fill",
+        "description": "Огненная рамка"
+    },
+    "neon": {
+        "name": "💡 Неоновая",
+        "filter": "drawbox=x=0:y=0:w=512:h=8:c=cyan@0.7:t=fill,"
+                  "drawbox=x=0:y=504:w=512:h=8:c=cyan@0.7:t=fill,"
+                  "drawbox=x=0:y=0:w=8:h=512:c=cyan@0.7:t=fill,"
+                  "drawbox=x=504:y=0:w=8:h=512:c=cyan@0.7:t=fill",
+        "description": "Неоновая рамка"
+    },
+    "rainbow": {
+        "name": "🌈 Радужная",
+        "filter": "drawbox=x=0:y=0:w=512:h=10:c=red@0.6:t=fill,"
+                  "drawbox=x=0:y=502:w=512:h=10:c=blue@0.6:t=fill,"
+                  "drawbox=x=0:y=0:w=10:h=512:c=green@0.6:t=fill,"
+                  "drawbox=x=502:y=0:w=10:h=512:c=yellow@0.6:t=fill",
+        "description": "Радужная рамка"
+    }
 }
+
+# ===== ПРОСТОЙ ТЕКСТ (без сложной анимации) =====
+def create_text_filter(text: str) -> str:
+    """Создает фильтр для текста"""
+    if not text or len(text.strip()) == 0:
+        return ""
+
+    # Экранируем текст
+    safe_text = text.replace("'", "\\'").replace(":", "\\:")
+    if len(safe_text) > 25:
+        safe_text = safe_text[:22] + "..."
+
+    # Простой текст внизу
+    return (f"drawtext=text='{safe_text}':"
+            f"fontcolor=white:"
+            f"fontsize=36:"
+            f"x=(w-text_w)/2:"
+            f"y=h-text_h-40:"
+            f"box=1:"
+            f"boxcolor=black@0.5:"
+            f"boxborderw=5")
 
 # ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 async def get_video_info(file_path: Path) -> Dict:
@@ -217,7 +275,7 @@ async def get_video_info(file_path: Path) -> Dict:
 async def run_ffmpeg(cmd: List[str], timeout: int = 30) -> Tuple[bool, str]:
     """Запускает FFmpeg команду"""
     try:
-        logger.info(f"🚀 Запускаю FFmpeg: {' '.join(cmd[:5])}...")
+        logger.info(f"🚀 Запускаю FFmpeg: {' '.join(cmd[:6])}...")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -234,8 +292,9 @@ async def run_ffmpeg(cmd: List[str], timeout: int = 30) -> Tuple[bool, str]:
         if proc.returncode == 0:
             return True, "Успешно"
         else:
-            error = stderr.decode('utf-8', errors='ignore')[:200]
-            return False, f"Код ошибки: {proc.returncode}, Ошибка: {error}"
+            error = stderr.decode('utf-8', errors='ignore')[:300]
+            logger.error(f"FFmpeg ошибка: {error}")
+            return False, f"Ошибка FFmpeg"
     except Exception as e:
         return False, f"Исключение: {str(e)}"
 
@@ -246,7 +305,7 @@ async def create_sticker_simple(
     frame: str = "none",
     text: str = ""
 ) -> Tuple[bool, str, int]:
-    """Простая функция создания стикера"""
+    """ПРОСТАЯ функция создания стикера (точно работает)"""
     try:
         logger.info(f"🎬 Создаю стикер из: {input_path}")
 
@@ -255,34 +314,45 @@ async def create_sticker_simple(
         if info['duration'] == 0:
             return False, "❌ Не удалось определить длительность видео", 0
 
-        # Готовим фильтры
-        base_filter = "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0,fps=30"
+        # Базовый фильтр - ПРОСТОЙ и РАБОЧИЙ
+        filters = []
 
-        # Добавляем эффект
+        # 1. Масштабирование (простое)
+        filters.append("scale=512:512:force_original_aspect_ratio=decrease")
+
+        # 2. Добавляем черные поля если нужно
+        filters.append("pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0")
+
+        # 3. Устанавливаем FPS
+        filters.append("fps=30")
+
+        # 4. Эффект видео
         effect_filter = VIDEO_EFFECTS[effect]["filter"]
         if effect_filter:
-            base_filter += f",{effect_filter}"
+            filters.append(effect_filter)
 
-        # Добавляем рамку
-        frame_filter = FRAME_EFFECTS[frame]["filter"]
+        # 5. Рамка
+        frame_filter = FRAMES[frame]["filter"]
         if frame_filter:
-            base_filter += f",{frame_filter}"
+            filters.append(frame_filter)
 
-        # Добавляем текст если есть
-        if text and len(text) > 0:
-            safe_text = text.replace("'", "\\'").replace(":", "\\:")
-            if len(safe_text) > 30:
-                safe_text = safe_text[:27] + "..."
-            text_filter = f"drawtext=text='{safe_text}':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=h-text_h-30:box=1:boxcolor=black@0.5"
-            base_filter += f",{text_filter}"
+        # 6. Текст
+        text_filter = create_text_filter(text)
+        if text_filter:
+            filters.append(text_filter)
 
-        # Команда FFmpeg
+        # Формируем цепочку фильтров
+        video_filter = ",".join([f for f in filters if f])
+
+        logger.info(f"🔧 Используемый фильтр: {video_filter}")
+
+        # ПРОСТАЯ команда FFmpeg которая точно работает
         cmd = [
             FFMPEG, "-y",
             "-i", str(input_path),
             "-t", str(min(STICKER_DURATION, info['duration'])),
             "-an",  # Без звука
-            "-vf", base_filter,
+            "-vf", video_filter,
             "-c:v", "libvpx-vp9",
             "-b:v", "150k",
             "-crf", "30",
@@ -298,34 +368,14 @@ async def create_sticker_simple(
         if success and output_path.exists():
             size_kb = output_path.stat().st_size / 1024
 
-            # Если слишком большой, оптимизируем
-            if size_kb > 256:
-                logger.info(f"⚙️ Оптимизирую {size_kb:.1f}KB -> 256KB")
-                opt_cmd = [
-                    FFMPEG, "-y",
-                    "-i", str(output_path),
-                    "-c:v", "libvpx-vp9",
-                    "-b:v", "100k",
-                    "-crf", "35",
-                    "-deadline", "good",
-                    "-f", "webm",
-                    str(output_path.with_suffix('.opt.webm'))
-                ]
-
-                opt_success, _ = await run_ffmpeg(opt_cmd)
-                if opt_success and output_path.with_suffix('.opt.webm').exists():
-                    opt_size = output_path.with_suffix('.opt.webm').stat().st_size / 1024
-                    if opt_size <= 256:
-                        output_path.unlink()
-                        output_path.with_suffix('.opt.webm').rename(output_path)
-                        size_kb = opt_size
-
+            # Формируем результат
             result_msg = f"✅ <b>Стикер создан!</b>\n\n"
             result_msg += f"🎬 <b>Эффект:</b> {VIDEO_EFFECTS[effect]['name']}\n"
-            result_msg += f"🖼️ <b>Рамка:</b> {FRAME_EFFECTS[frame]['name']}\n"
+            result_msg += f"🖼️ <b>Рамка:</b> {FRAMES[frame]['name']}\n"
             if text:
                 result_msg += f"📝 <b>Текст:</b> {text[:20]}{'...' if len(text) > 20 else ''}\n"
             result_msg += f"📦 <b>Размер:</b> {size_kb:.1f}KB / 256KB\n"
+            result_msg += f"📐 <b>Разрешение:</b> 512x512\n"
             result_msg += f"⏱ <b>Длительность:</b> {min(STICKER_DURATION, info['duration']):.1f}с\n"
 
             if size_kb <= 256:
@@ -352,11 +402,17 @@ async def start_command(message: Message):
         "• 2.9 секунды\n"
         "• WebM формат\n"
         "• До 256KB\n\n"
-        "📤 <b>Отправь видео для начала!</b>\n\n"
-        "<i>Поддерживаются: видео, GIF, документы до 20MB</i>",
+        "✨ <b>Функции:</b>\n"
+        "• 4 видео эффекта\n"
+        "• 3 стильные рамки\n"
+        "• Добавление текста\n\n"
+        "📤 <b>Отправь видео для начала!</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="📤 Отправить видео")]],
+            keyboard=[
+                [KeyboardButton(text="📤 Отправить видео")],
+                [KeyboardButton(text="✨ Эффекты"), KeyboardButton(text="🖼️ Рамки")]
+            ],
             resize_keyboard=True
         )
     )
@@ -371,7 +427,31 @@ async def send_video_handler(message: Message):
         "📤 <b>Отправь видео, GIF или видео-файл</b>\n\n"
         "<i>• До 20MB\n"
         "• Будет обрезано до 2.9 секунд\n"
-        "• Можно добавить текст и эффекты</i>",
+        "• Можно добавить текст</i>",
+        parse_mode=ParseMode.HTML
+    )
+
+@router.message(F.text == "✨ Эффекты")
+async def show_effects(message: Message):
+    """Показывает доступные эффекты"""
+    effects_text = ""
+    for key, effect in VIDEO_EFFECTS.items():
+        effects_text += f"• <b>{effect['name']}</b>\n  <i>{effect['description']}</i>\n\n"
+
+    await message.answer(
+        f"✨ <b>Видео эффекты:</b>\n\n{effects_text}",
+        parse_mode=ParseMode.HTML
+    )
+
+@router.message(F.text == "🖼️ Рамки")
+async def show_frames(message: Message):
+    """Показывает доступные рамки"""
+    frames_text = ""
+    for key, frame in FRAMES.items():
+        frames_text += f"• <b>{frame['name']}</b>\n  <i>{frame['description']}</i>\n\n"
+
+    await message.answer(
+        f"🖼️ <b>Рамки для видео:</b>\n\n{frames_text}",
         parse_mode=ParseMode.HTML
     )
 
@@ -381,7 +461,6 @@ async def handle_video(message: Message):
     try:
         user_id = message.from_user.id
 
-        # Проверяем что пользователь ожидает видео
         if user_id not in storage.user_data or storage.user_data[user_id].get('step') != 'waiting_video':
             await message.answer("ℹ️ Нажми '📤 Отправить видео' для начала")
             return
@@ -420,7 +499,6 @@ async def handle_video(message: Message):
                 await status_msg.edit_text(f"❌ <b>Ошибка скачивания:</b> {e}")
                 return
 
-        # Проверяем что файл не пустой
         if not input_path.exists() or input_path.stat().st_size == 0:
             await status_msg.edit_text("❌ <b>Файл пустой или поврежден</b>")
             try:
@@ -444,11 +522,10 @@ async def handle_video(message: Message):
         await status_msg.edit_text(
             "✅ <b>Видео получено!</b>\n\n"
             "📝 <b>Хочешь добавить текст на видео?</b>\n\n"
-            "Отправь текст (до 30 символов) или нажми /skip",
+            "Отправь текст (до 25 символов) или нажми /skip",
             parse_mode=ParseMode.HTML
         )
 
-        # Удаляем временный файл
         try:
             input_path.unlink()
         except:
@@ -471,15 +548,23 @@ async def handle_text(message: Message):
         if storage.user_data[user_id].get('step') != 'waiting_text':
             return
 
+        # Проверяем что это не команда
+        if message.text.startswith('/'):
+            return
+
         text = message.text.strip()
-        if len(text) > 30:
-            await message.answer("❌ Слишком длинный текст! Максимум 30 символов.")
+        if len(text) == 0:
+            await message.answer("❌ Текст не может быть пустым!")
+            return
+
+        if len(text) > 25:
+            await message.answer("❌ Слишком длинный текст! Максимум 25 символов.")
             return
 
         storage.user_data[user_id]['text'] = text
         storage.user_data[user_id]['step'] = 'waiting_effect'
 
-        # Создаем клавиатуру с эффектами
+        # Клавиатура с эффектами
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=VIDEO_EFFECTS["none"]["name"], 
@@ -523,7 +608,7 @@ async def skip_text(message: Message):
         storage.user_data[user_id]['text'] = ''
         storage.user_data[user_id]['step'] = 'waiting_effect'
 
-        # Создаем клавиатуру с эффектами
+        # Клавиатура с эффектами
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=VIDEO_EFFECTS["none"]["name"], 
@@ -579,18 +664,18 @@ async def handle_effect(callback: CallbackQuery):
 
         effect_name = VIDEO_EFFECTS[effect]["name"]
 
-        # Создаем клавиатуру с рамками
+        # Клавиатура с рамками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text=FRAME_EFFECTS["none"]["name"], 
+                InlineKeyboardButton(text=FRAMES["none"]["name"], 
                                    callback_data=f"frame_none_{user_id}"),
-                InlineKeyboardButton(text=FRAME_EFFECTS["fire"]["name"], 
+                InlineKeyboardButton(text=FRAMES["fire"]["name"], 
                                    callback_data=f"frame_fire_{user_id}")
             ],
             [
-                InlineKeyboardButton(text=FRAME_EFFECTS["neon"]["name"], 
+                InlineKeyboardButton(text=FRAMES["neon"]["name"], 
                                    callback_data=f"frame_neon_{user_id}"),
-                InlineKeyboardButton(text=FRAME_EFFECTS["rainbow"]["name"], 
+                InlineKeyboardButton(text=FRAMES["rainbow"]["name"], 
                                    callback_data=f"frame_rainbow_{user_id}")
             ]
         ])
@@ -619,13 +704,13 @@ async def handle_frame(callback: CallbackQuery):
         frame = parts[1]
         user_id = int(parts[2])
 
-        if frame not in FRAME_EFFECTS:
+        if frame not in FRAMES:
             return
 
         if user_id not in storage.user_data:
             return
 
-        # Получаем данные
+        # Получаем все данные
         file_id = storage.user_data[user_id]['file_id']
         effect = storage.user_data[user_id]['effect']
         text = storage.user_data[user_id].get('text', '')
@@ -637,13 +722,16 @@ async def handle_frame(callback: CallbackQuery):
             return
 
         effect_name = VIDEO_EFFECTS[effect]["name"]
-        frame_name = FRAME_EFFECTS[frame]["name"]
+        frame_name = FRAMES[frame]["name"]
 
         await bot.send_chat_action(callback.message.chat.id, ChatAction.UPLOAD_VIDEO)
 
         processing_msg = await callback.message.answer(
             f"🎬 <b>Создаю стикер...</b>\n\n"
-            f"⚙️ <i>Обработка может занять до 30 секунд</i>",
+            f"✨ <i>Эффект:</i> {effect_name}\n"
+            f"🖼️ <i>Рамка:</i> {frame_name}\n"
+            f"📝 <i>Текст:</i> {text[:15] if text else 'нет'}\n\n"
+            f"⏳ <i>Обработка...</i>",
             parse_mode=ParseMode.HTML
         )
 
@@ -651,7 +739,7 @@ async def handle_frame(callback: CallbackQuery):
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
             output_path = Path(tmp.name)
 
-        # Создаем стикер
+        # Создаем стикер (ПРОСТОЙ МЕТОД)
         success, result_text, size_kb = await create_sticker_simple(
             input_path, output_path, effect, frame, text
         )
@@ -659,12 +747,14 @@ async def handle_frame(callback: CallbackQuery):
         if success:
             await processing_msg.edit_text("📤 <i>Отправляю файл...</i>", parse_mode=ParseMode.HTML)
 
-            # Читаем файл
             try:
+                # Читаем файл
                 with open(output_path, 'rb') as f:
                     webm_data = f.read()
 
-                filename = f"sticker_{STICKER_DURATION}s.webm"
+                # Генерируем имя файла
+                timestamp = int(time.time())
+                filename = f"sticker_{timestamp}.webm"
 
                 # Отправляем файл
                 await bot.send_document(
@@ -709,30 +799,26 @@ async def handle_frame(callback: CallbackQuery):
 async def main():
     """Основная функция запуска"""
     print("\n" + "=" * 60)
-    print("🚀 ЗАПУСК VIDEO STICKER BOT")
+    print("🚀 ЗАПУСК VIDEO STICKER BOT - РАБОЧАЯ ВЕРСИЯ")
     print("=" * 60)
-    print("⚙️ ОСНОВНЫЕ ПАРАМЕТРЫ:")
-    print(f"   • Длительность: {STICKER_DURATION} секунды")
-    print("   • Разрешение: 512x512 пикселей")
-    print("   • Формат: WebM с VP9")
-    print("   • Размер: ≤256 КБ")
+    print("✅ ВСЕ ЭФФЕКТЫ ПРОСТЫЕ И РАБОЧИЕ")
     print("=" * 60)
 
     # Очищаем старые файлы
     cleanup()
 
-    # Запускаем keep-alive в отдельном потоке
+    # Запускаем keep-alive
     try:
         keep_alive_thread = threading.Thread(target=run_keep_alive, daemon=True)
         keep_alive_thread.start()
-        logger.info("✅ Keep-alive запущен")
+        logger.info("✅ Keep-alive запущен на порту 3000")
     except Exception as e:
         logger.error(f"⚠️ Ошибка keep-alive: {e}")
 
     # Получаем информацию о боте
     me = await bot.get_me()
     logger.info(f"🤖 Бот: @{me.username}")
-    logger.info("✅ Готов к работе!")
+    logger.info("✅ Бот запущен!")
 
     # Запускаем бота
     try:
