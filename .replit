@@ -1,2 +1,22 @@
 run = "python3 main.py"
 language = "python"
+modules = ["python-3.11"]
+
+[userenv]
+  [userenv.shared]
+  BOT_TOKEN = "токен"
+  REPLIT_URL = "ввести"
+
+[nix]
+packages = ["ffmpeg-full", "ffmpeg_4", "imagemagickBig", "libGL", "python39Packages.imageio-ffmpeg", "python39Packages.numpy", "python39Packages.pillow"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[agent]
+expertMode = true
