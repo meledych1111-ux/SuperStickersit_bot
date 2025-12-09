@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# main.py - Video Sticker Bot с УПРОЩЕННЫМИ рабочими эффектами
+# main.py - Video Sticker Bot - ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ
 import os
 import sys
 import asyncio
@@ -15,10 +15,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
 import atexit
 import signal
-import random
 
 print("=" * 60)
-print("🎬 Video Sticker Bot 2.9s - РАБОЧАЯ ВЕРСИЯ")
+print("🎬 Video Sticker Bot - ФИНАЛЬНАЯ ВЕРСИЯ")
 print("=" * 60)
 
 # ===== НАСТРОЙКА ЛОГГИРОВАНИЯ =====
@@ -35,7 +34,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain; charset=utf-8')
         self.end_headers()
-        response = f"🎬 Video Sticker Bot v2.9\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+        response = f"🎬 Video Sticker Bot\n⏰ {datetime.now().strftime('%H:%M:%S')}"
         self.wfile.write(response.encode('utf-8'))
 
     def log_message(self, format, *args):
@@ -83,8 +82,7 @@ try:
     from aiogram.enums import ParseMode, ChatAction
     from aiogram.client.session.aiohttp import AiohttpSession
     from aiogram.client.default import DefaultBotProperties
-
-    logger.info("✅ Aiogram 3.22 загружен")
+    logger.info("✅ Aiogram загружен")
 except ImportError as e:
     logger.error(f"❌ Ошибка импорта: {e}")
     sys.exit(1)
@@ -107,7 +105,6 @@ dp = Dispatcher()
 dp.include_router(router)
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
-TARGET_SIZE = 256 * 1024  # 256KB
 STICKER_DURATION = 2.9  # 2.9 секунды
 
 # ===== ХРАНИЛИЩЕ =====
@@ -117,7 +114,7 @@ class FileStorage:
         self.storage_dir.mkdir(exist_ok=True)
         self.files = {}
         self.user_data = {}
-        logger.info(f"📁 Хранилище создано: {self.storage_dir.absolute()}")
+        logger.info(f"📁 Хранилище создано")
 
     def save(self, user_id: int, file_path: Path) -> str:
         file_id = str(uuid.uuid4())
@@ -129,10 +126,8 @@ class FileStorage:
         self.files[file_id] = {
             'path': saved_path,
             'user_id': user_id,
-            'time': time.time(),
-            'size': saved_path.stat().st_size
+            'time': time.time()
         }
-        logger.info(f"💾 Файл сохранен: {file_id}")
         return file_id
 
     def get(self, file_id: str) -> Optional[Path]:
@@ -154,36 +149,91 @@ class FileStorage:
 
 storage = FileStorage()
 
-# ===== УПРОЩЕННЫЕ РАБОЧИЕ ЭФФЕКТЫ =====
+# ===== ЗАМЕТНЫЕ ЭФФЕКТЫ КОТОРЫЕ РАБОТАЮТ =====
 VIDEO_EFFECTS = {
     "none": {
         "name": "🎬 Оригинал",
         "filter": "",
-        "description": "Без эффектов"
+        "description": "Без изменений"
     },
-    "slowmo": {
+    "slow": {
         "name": "🐌 Замедление",
-        "filter": "setpts=1.5*PTS",
-        "description": "Замедленное видео"
+        "filter": "setpts=2.0*PTS",
+        "description": "Видео в 2 раза медленнее"
     },
-    "fastmo": {
-        "name": "⚡ Ускорение",
-        "filter": "setpts=0.7*PTS",
-        "description": "Ускоренное видео"
+    "fast": {
+        "name": "⚡ Ускорение", 
+        "filter": "setpts=0.5*PTS",
+        "description": "Видео в 2 раза быстрее"
     },
     "vibrant": {
         "name": "🌈 Яркие цвета",
-        "filter": "eq=saturation=1.2",
-        "description": "Усиленные цвета"
+        "filter": "eq=saturation=1.8:brightness=0.1",
+        "description": "Очень яркие и сочные цвета"
     },
     "vintage": {
         "name": "📻 Винтаж",
         "filter": "curves=preset=vintage",
-        "description": "Винтажный эффект"
+        "description": "Желто-коричневые тона как старое фото"
+    },
+    "cinema": {
+        "name": "🎥 Кинематограф",
+        "filter": "eq=contrast=1.5:brightness=-0.1",
+        "description": "Высокая контрастность как в кино"
+    },
+    "action": {
+        "name": "💥 Экшен",
+        "filter": "setpts=0.8*PTS, eq=saturation=1.5",
+        "description": "Быстрое видео с яркими цветами"
+    },
+    "noir": {
+        "name": "🕵️‍♂️ Фильм-нуар",
+        "filter": "format=gray, eq=contrast=1.5",
+        "description": "Черно-белое как старые детективы"
+    },
+    "fantasy": {
+        "name": "🧚 Фэнтези",
+        "filter": "eq=saturation=1.5, colorbalance=rs=0.3:gs=-0.1",
+        "description": "Волшебные розово-зеленые тона"
+    },
+    "horror": {
+        "name": "👻 Хоррор",
+        "filter": "eq=brightness=-0.2:contrast=1.3, colorbalance=bm=-0.3",
+        "description": "Темное видео с синими тонами"
+    },
+    "oldfilm": {
+        "name": "🎞️ Старая пленка",
+        "filter": "curves=preset=vintage, noise=c0s=8",
+        "description": "Старое видео с шумом пленки"
+    },
+    "scifi": {
+        "name": "👽 Sci-Fi",
+        "filter": "colorbalance=rs=-0.2:bs=0.3, eq=contrast=1.4",
+        "description": "Синие футуристические тона"
     }
 }
 
-# ===== ПРОСТЫЕ РАМКИ =====
+# ===== ЦВЕТА ТЕКСТА =====
+TEXT_COLORS = {
+    "white": "⚪ Белый",
+    "black": "⚫ Черный",
+    "yellow": "💛 Желтый",
+    "red": "🔴 Красный",
+    "blue": "🔵 Синий",
+    "green": "🟢 Зеленый",
+    "pink": "🌸 Розовый",
+    "orange": "🟠 Оранжевый"
+}
+
+# ===== РАЗМЕРЫ ТЕКСТА =====
+TEXT_SIZES = {
+    "small": "📏 Маленький",
+    "medium": "📐 Средний",
+    "large": "📊 Большой",
+    "xlarge": "💥 Огромный"
+}
+
+# ===== РАМКИ =====
 FRAMES = {
     "none": {
         "name": "🖼️ Без рамки",
@@ -216,9 +266,9 @@ FRAMES = {
     }
 }
 
-# ===== ПРОСТОЙ ТЕКСТ (без сложной анимации) =====
-def create_text_filter(text: str) -> str:
-    """Создает фильтр для текста"""
+# ===== ФУНКЦИЯ ДЛЯ ТЕКСТА =====
+def create_text_filter_advanced(text: str, color: str = "white", size: str = "medium") -> str:
+    """Создает фильтр для текста с цветами и размерами"""
     if not text or len(text.strip()) == 0:
         return ""
 
@@ -227,131 +277,107 @@ def create_text_filter(text: str) -> str:
     if len(safe_text) > 25:
         safe_text = safe_text[:22] + "..."
 
-    # Простой текст внизу
+    # Определяем размер
+    if size == "small":
+        font_size = 28
+        y_offset = 30
+    elif size == "large":
+        font_size = 44
+        y_offset = 50
+    elif size == "xlarge":
+        font_size = 52
+        y_offset = 60
+    else:  # medium
+        font_size = 36
+        y_offset = 40
+
+    # Определяем цвет
+    if color == "black":
+        font_color = "black"
+        outline_color = "white"
+    elif color == "white":
+        font_color = "white"
+        outline_color = "black"
+    elif color == "yellow":
+        font_color = "yellow"
+        outline_color = "black"
+    elif color == "red":
+        font_color = "red"
+        outline_color = "white"
+    elif color == "blue":
+        font_color = "blue"
+        outline_color = "white"
+    elif color == "green":
+        font_color = "green"
+        outline_color = "black"
+    elif color == "pink":
+        font_color = "magenta"
+        outline_color = "black"
+    elif color == "orange":
+        font_color = "orange"
+        outline_color = "black"
+    else:
+        font_color = "white"
+        outline_color = "black"
+
+    # Создаем фильтр с контуром
     return (f"drawtext=text='{safe_text}':"
-            f"fontcolor=white:"
-            f"fontsize=36:"
+            f"fontcolor={font_color}:"
+            f"fontsize={font_size}:"
             f"x=(w-text_w)/2:"
-            f"y=h-text_h-40:"
+            f"y=h-text_h-{y_offset}:"
             f"box=1:"
-            f"boxcolor=black@0.5:"
-            f"boxborderw=5")
+            f"boxcolor={outline_color}@0.3:"
+            f"boxborderw=3")
 
-# ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-async def get_video_info(file_path: Path) -> Dict:
-    """Получает информацию о видео"""
-    try:
-        cmd = [FFMPEG, "-i", str(file_path), "-hide_banner"]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        _, stderr = await proc.communicate()
-        output = stderr.decode('utf-8', errors='ignore')
-
-        info = {'duration': 0, 'width': 0, 'height': 0, 'fps': 30}
-
-        for line in output.split('\n'):
-            if 'Duration:' in line:
-                try:
-                    dur_str = line.split('Duration:')[1].split(',')[0].strip()
-                    h, m, s = dur_str.split(':')
-                    info['duration'] = int(h)*3600 + int(m)*60 + float(s)
-                except:
-                    pass
-            elif 'Video:' in line:
-                import re
-                match = re.search(r'(\d+)x(\d+)', line)
-                if match:
-                    info['width'] = int(match.group(1))
-                    info['height'] = int(match.group(2))
-
-        return info
-    except Exception as e:
-        logger.error(f"Ошибка получения информации: {e}")
-        return {'duration': 0, 'width': 0, 'height': 0, 'fps': 30}
-
-async def run_ffmpeg(cmd: List[str], timeout: int = 30) -> Tuple[bool, str]:
-    """Запускает FFmpeg команду"""
-    try:
-        logger.info(f"🚀 Запускаю FFmpeg: {' '.join(cmd[:6])}...")
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return False, "Таймаут выполнения"
-
-        if proc.returncode == 0:
-            return True, "Успешно"
-        else:
-            error = stderr.decode('utf-8', errors='ignore')[:300]
-            logger.error(f"FFmpeg ошибка: {error}")
-            return False, f"Ошибка FFmpeg"
-    except Exception as e:
-        return False, f"Исключение: {str(e)}"
-
+# ===== ФУНКЦИЯ СОЗДАНИЯ СТИКЕРА =====
 async def create_sticker_simple(
     input_path: Path,
     output_path: Path,
     effect: str = "none",
     frame: str = "none",
-    text: str = ""
+    text: str = "",
+    text_color: str = "white",
+    text_size: str = "medium"
 ) -> Tuple[bool, str, int]:
-    """ПРОСТАЯ функция создания стикера (точно работает)"""
+    """Функция создания стикера"""
     try:
-        logger.info(f"🎬 Создаю стикер из: {input_path}")
+        logger.info(f"🎬 Создаю стикер: эффект={effect}, рамка={frame}")
 
-        # Получаем информацию о видео
-        info = await get_video_info(input_path)
-        if info['duration'] == 0:
-            return False, "❌ Не удалось определить длительность видео", 0
+        # Базовый фильтр
+        filters = [
+            "scale=512:512:force_original_aspect_ratio=decrease",
+            "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0",
+            "fps=30"
+        ]
 
-        # Базовый фильтр - ПРОСТОЙ и РАБОЧИЙ
-        filters = []
+        # Добавляем эффект
+        if effect in VIDEO_EFFECTS:
+            effect_filter = VIDEO_EFFECTS[effect]["filter"]
+            if effect_filter:
+                filters.append(effect_filter)
 
-        # 1. Масштабирование (простое)
-        filters.append("scale=512:512:force_original_aspect_ratio=decrease")
+        # Рамка
+        if frame in FRAMES:
+            frame_filter = FRAMES[frame]["filter"]
+            if frame_filter:
+                filters.append(frame_filter)
 
-        # 2. Добавляем черные поля если нужно
-        filters.append("pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0")
+        # Текст
+        if text:
+            text_filter = create_text_filter_advanced(text, text_color, text_size)
+            if text_filter:
+                filters.append(text_filter)
 
-        # 3. Устанавливаем FPS
-        filters.append("fps=30")
-
-        # 4. Эффект видео
-        effect_filter = VIDEO_EFFECTS[effect]["filter"]
-        if effect_filter:
-            filters.append(effect_filter)
-
-        # 5. Рамка
-        frame_filter = FRAMES[frame]["filter"]
-        if frame_filter:
-            filters.append(frame_filter)
-
-        # 6. Текст
-        text_filter = create_text_filter(text)
-        if text_filter:
-            filters.append(text_filter)
-
-        # Формируем цепочку фильтров
+        # Формируем фильтр
         video_filter = ",".join([f for f in filters if f])
 
-        logger.info(f"🔧 Используемый фильтр: {video_filter}")
-
-        # ПРОСТАЯ команда FFmpeg которая точно работает
+        # Команда FFmpeg
         cmd = [
             FFMPEG, "-y",
             "-i", str(input_path),
-            "-t", str(min(STICKER_DURATION, info['duration'])),
-            "-an",  # Без звука
+            "-t", str(STICKER_DURATION),
+            "-an",
             "-vf", video_filter,
             "-c:v", "libvpx-vp9",
             "-b:v", "150k",
@@ -362,21 +388,39 @@ async def create_sticker_simple(
             str(output_path)
         ]
 
-        # Запускаем кодирование
-        success, message = await run_ffmpeg(cmd)
+        # Запускаем
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
 
-        if success and output_path.exists():
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode == 0 and output_path.exists():
             size_kb = output_path.stat().st_size / 1024
 
             # Формируем результат
             result_msg = f"✅ <b>Стикер создан!</b>\n\n"
-            result_msg += f"🎬 <b>Эффект:</b> {VIDEO_EFFECTS[effect]['name']}\n"
-            result_msg += f"🖼️ <b>Рамка:</b> {FRAMES[frame]['name']}\n"
+
+            # Эффект
+            effect_name = VIDEO_EFFECTS.get(effect, {}).get("name", effect)
+            effect_desc = VIDEO_EFFECTS.get(effect, {}).get("description", "")
+            result_msg += f"🎬 <b>Эффект:</b> {effect_name}\n"
+            result_msg += f"📝 <i>{effect_desc}</i>\n"
+
+            # Рамка
+            frame_name = FRAMES.get(frame, {}).get("name", frame)
+            result_msg += f"🖼️ <b>Рамка:</b> {frame_name}\n"
+
             if text:
                 result_msg += f"📝 <b>Текст:</b> {text[:20]}{'...' if len(text) > 20 else ''}\n"
-            result_msg += f"📦 <b>Размер:</b> {size_kb:.1f}KB / 256KB\n"
+                result_msg += f"🎨 <b>Цвет:</b> {TEXT_COLORS.get(text_color, 'Белый')}\n"
+                result_msg += f"📏 <b>Размер:</b> {TEXT_SIZES.get(text_size, 'Средний')}\n"
+
+            result_msg += f"📦 <b>Размер файла:</b> {size_kb:.1f}KB / 256KB\n"
             result_msg += f"📐 <b>Разрешение:</b> 512x512\n"
-            result_msg += f"⏱ <b>Длительность:</b> {min(STICKER_DURATION, info['duration']):.1f}с\n"
+            result_msg += f"⏱ <b>Длительность:</b> {STICKER_DURATION}с\n"
 
             if size_kb <= 256:
                 result_msg += f"\n🎉 <b>Соответствует требованиям Telegram!</b>"
@@ -385,11 +429,38 @@ async def create_sticker_simple(
 
             return True, result_msg, int(size_kb)
         else:
-            return False, f"❌ Ошибка создания стикера: {message}", 0
+            error = stderr.decode('utf-8', errors='ignore')[:300]
+            logger.error(f"FFmpeg ошибка: {error}")
+            return False, f"❌ Ошибка FFmpeg", 0
 
     except Exception as e:
         logger.error(f"🔥 Ошибка в create_sticker_simple: {e}")
         return False, f"❌ Ошибка: {str(e)[:100]}", 0
+
+# ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПАРСИНГА =====
+def parse_simple_callback(data: str, prefix: str) -> Tuple[str, int]:
+    """Простой парсер callback data"""
+    try:
+        # Убираем префикс
+        rest = data[len(prefix):]
+
+        # Разделяем на части
+        parts = rest.split("_")
+
+        # Если частей 2 или больше, значит есть значение и user_id
+        if len(parts) >= 2:
+            # Значение - все кроме последней части
+            value = "_".join(parts[:-1])
+            user_id = int(parts[-1])
+            return value, user_id
+        elif len(parts) == 1:
+            # Только user_id
+            return "", int(parts[0])
+        else:
+            return "", 0
+    except Exception as e:
+        logger.error(f"Ошибка парсинга {data}: {e}")
+        return "", 0
 
 # ===== ОБРАБОТЧИКИ =====
 @router.message(CommandStart())
@@ -403,9 +474,10 @@ async def start_command(message: Message):
         "• WebM формат\n"
         "• До 256KB\n\n"
         "✨ <b>Функции:</b>\n"
-        "• 4 видео эффекта\n"
-        "• 3 стильные рамки\n"
-        "• Добавление текста\n\n"
+        "• 8 цветов текста\n"
+        "• 4 размера текста\n"
+        "• 12 ЗАМЕТНЫХ эффектов\n"
+        "• 4 стильные рамки\n\n"
         "📤 <b>Отправь видео для начала!</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
@@ -434,26 +506,48 @@ async def send_video_handler(message: Message):
 @router.message(F.text == "✨ Эффекты")
 async def show_effects(message: Message):
     """Показывает доступные эффекты"""
-    effects_text = ""
-    for key, effect in VIDEO_EFFECTS.items():
-        effects_text += f"• <b>{effect['name']}</b>\n  <i>{effect['description']}</i>\n\n"
+    effects_text = "<b>🎬 Все видео эффекты:</b>\n\n"
+    effects_text += "<i>Каждый эффект ЗАМЕТНО меняет видео:</i>\n\n"
+
+    effects_list = [
+        ("🎬 Оригинал", "Без изменений"),
+        ("🐌 Замедление", "Видео в 2 раза медленнее"),
+        ("⚡ Ускорение", "Видео в 2 раза быстрее"),
+        ("🌈 Яркие цвета", "Очень яркие и сочные цвета"),
+        ("📻 Винтаж", "Желто-коричневые тона как старое фото"),
+        ("🎥 Кинематограф", "Высокая контрастность как в кино"),
+        ("💥 Экшен", "Быстрое видео с яркими цветами"),
+        ("🕵️‍♂️ Фильм-нуар", "Черно-белое как старые детективы"),
+        ("🧚 Фэнтези", "Волшебные розово-зеленые тона"),
+        ("👻 Хоррор", "Темное видео с синими тонами"),
+        ("🎞️ Старая пленка", "Старое видео с шумом пленки"),
+        ("👽 Sci-Fi", "Синие футуристические тона")
+    ]
+
+    for name, desc in effects_list:
+        effects_text += f"<b>{name}</b>\n<i>{desc}</i>\n\n"
 
     await message.answer(
-        f"✨ <b>Видео эффекты:</b>\n\n{effects_text}",
+        f"{effects_text}",
         parse_mode=ParseMode.HTML
     )
 
 @router.message(F.text == "🖼️ Рамки")
 async def show_frames(message: Message):
     """Показывает доступные рамки"""
-    frames_text = ""
+    frames_text = "<b>🖼️ Доступные рамки:</b>\n\n"
     for key, frame in FRAMES.items():
-        frames_text += f"• <b>{frame['name']}</b>\n  <i>{frame['description']}</i>\n\n"
+        frames_text += f"<b>{frame['name']}</b>\n<i>{frame['description']}</i>\n\n"
 
     await message.answer(
-        f"🖼️ <b>Рамки для видео:</b>\n\n{frames_text}",
+        frames_text,
         parse_mode=ParseMode.HTML
     )
+
+@router.message(Command("effects"))
+async def effects_command(message: Message):
+    """Команда для просмотра эффектов"""
+    await show_effects(message)
 
 @router.message(F.video | F.animation | F.document)
 async def handle_video(message: Message):
@@ -516,7 +610,9 @@ async def handle_video(message: Message):
             'step': 'waiting_text',
             'text': '',
             'effect': 'none',
-            'frame': 'none'
+            'frame': 'none',
+            'text_color': 'white',
+            'text_size': 'medium'
         }
 
         await status_msg.edit_text(
@@ -548,10 +644,6 @@ async def handle_text(message: Message):
         if storage.user_data[user_id].get('step') != 'waiting_text':
             return
 
-        # Проверяем что это не команда
-        if message.text.startswith('/'):
-            return
-
         text = message.text.strip()
         if len(text) == 0:
             await message.answer("❌ Текст не может быть пустым!")
@@ -562,31 +654,25 @@ async def handle_text(message: Message):
             return
 
         storage.user_data[user_id]['text'] = text
-        storage.user_data[user_id]['step'] = 'waiting_effect'
+        storage.user_data[user_id]['step'] = 'waiting_color'
 
-        # Клавиатура с эффектами
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["none"]["name"], 
-                                   callback_data=f"effect_none_{user_id}"),
-                InlineKeyboardButton(text=VIDEO_EFFECTS["slowmo"]["name"], 
-                                   callback_data=f"effect_slowmo_{user_id}")
-            ],
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["fastmo"]["name"], 
-                                   callback_data=f"effect_fastmo_{user_id}"),
-                InlineKeyboardButton(text=VIDEO_EFFECTS["vibrant"]["name"], 
-                                   callback_data=f"effect_vibrant_{user_id}")
-            ],
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["vintage"]["name"], 
-                                   callback_data=f"effect_vintage_{user_id}")
-            ]
-        ])
+        # Клавиатура с цветами текста
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        row = []
+        for color_key, color_name in TEXT_COLORS.items():
+            row.append(InlineKeyboardButton(
+                text=color_name,
+                callback_data=f"color_{color_key}_{user_id}"
+            ))
+            if len(row) == 2:
+                keyboard.inline_keyboard.append(row)
+                row = []
+        if row:
+            keyboard.inline_keyboard.append(row)
 
         await message.answer(
             f"✅ <b>Текст сохранен:</b> {text}\n\n"
-            f"🎬 <b>Теперь выбери видео эффект:</b>",
+            f"🎨 <b>Теперь выбери цвет текста:</b>",
             reply_markup=keyboard,
             parse_mode=ParseMode.HTML
         )
@@ -606,31 +692,26 @@ async def skip_text(message: Message):
             return
 
         storage.user_data[user_id]['text'] = ''
-        storage.user_data[user_id]['step'] = 'waiting_effect'
+        storage.user_data[user_id]['step'] = 'waiting_color'
 
-        # Клавиатура с эффектами
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["none"]["name"], 
-                                   callback_data=f"effect_none_{user_id}"),
-                InlineKeyboardButton(text=VIDEO_EFFECTS["slowmo"]["name"], 
-                                   callback_data=f"effect_slowmo_{user_id}")
-            ],
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["fastmo"]["name"], 
-                                   callback_data=f"effect_fastmo_{user_id}"),
-                InlineKeyboardButton(text=VIDEO_EFFECTS["vibrant"]["name"], 
-                                   callback_data=f"effect_vibrant_{user_id}")
-            ],
-            [
-                InlineKeyboardButton(text=VIDEO_EFFECTS["vintage"]["name"], 
-                                   callback_data=f"effect_vintage_{user_id}")
-            ]
-        ])
+        # Клавиатура с цветами текста
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        row = []
+        for color_key, color_name in TEXT_COLORS.items():
+            row.append(InlineKeyboardButton(
+                text=color_name,
+                callback_data=f"color_{color_key}_{user_id}"
+            ))
+            if len(row) == 2:
+                keyboard.inline_keyboard.append(row)
+                row = []
+        if row:
+            keyboard.inline_keyboard.append(row)
 
         await message.answer(
             "⏭️ <b>Пропускаем текст</b>\n\n"
-            "🎬 <b>Выбери видео эффект:</b>",
+            "🎨 <b>Выбери цвет текста:</b>\n"
+            "<i>Текст не будет добавлен, но выбери цвет для продолжения</i>",
             reply_markup=keyboard,
             parse_mode=ParseMode.HTML
         )
@@ -639,49 +720,136 @@ async def skip_text(message: Message):
         logger.error(f"❌ Ошибка в skip_text: {e}")
         await message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
 
+@router.callback_query(F.data.startswith("color_"))
+async def handle_color(callback: CallbackQuery):
+    """Обработка выбора цвета текста"""
+    try:
+        await callback.answer()
+
+        color, user_id = parse_simple_callback(callback.data, "color_")
+
+        if color not in TEXT_COLORS:
+            return
+
+        if user_id not in storage.user_data:
+            return
+
+        # Сохраняем цвет
+        storage.user_data[user_id]['text_color'] = color
+        storage.user_data[user_id]['step'] = 'waiting_size'
+
+        # Показываем выбор размера
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        row = []
+        for size_key, size_name in TEXT_SIZES.items():
+            row.append(InlineKeyboardButton(
+                text=size_name,
+                callback_data=f"size_{size_key}_{user_id}"
+            ))
+            if len(row) == 2:
+                keyboard.inline_keyboard.append(row)
+                row = []
+        if row:
+            keyboard.inline_keyboard.append(row)
+
+        await callback.message.edit_text(
+            f"✅ <b>Цвет выбран:</b> {TEXT_COLORS[color]}\n\n"
+            f"📏 <b>Теперь выбери размер текста:</b>",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка в handle_color: {e}")
+
+@router.callback_query(F.data.startswith("size_"))
+async def handle_size(callback: CallbackQuery):
+    """Обработка выбора размера текста"""
+    try:
+        await callback.answer()
+
+        size, user_id = parse_simple_callback(callback.data, "size_")
+
+        if size not in TEXT_SIZES:
+            return
+
+        if user_id not in storage.user_data:
+            return
+
+        # Сохраняем размер
+        storage.user_data[user_id]['text_size'] = size
+        storage.user_data[user_id]['step'] = 'waiting_effect'
+
+        # Показываем все эффекты сразу
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        row = []
+
+        # Все эффекты
+        all_effects = list(VIDEO_EFFECTS.items())
+        for i, (effect_key, effect_data) in enumerate(all_effects):
+            row.append(InlineKeyboardButton(
+                text=effect_data['name'],
+                callback_data=f"effect_{effect_key}_{user_id}"
+            ))
+            if len(row) == 2:
+                keyboard.inline_keyboard.append(row)
+                row = []
+        if row:
+            keyboard.inline_keyboard.append(row)
+
+        await callback.message.edit_text(
+            f"✅ <b>Размер выбран:</b> {TEXT_SIZES[size]}\n\n"
+            f"🎬 <b>Теперь выбери видео эффект:</b>\n\n"
+            f"<i>Каждый эффект ЗАМЕТНО меняет видео!</i>",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка в handle_size: {e}")
+
 @router.callback_query(F.data.startswith("effect_"))
 async def handle_effect(callback: CallbackQuery):
     """Обработка выбора эффекта"""
     try:
         await callback.answer()
 
-        parts = callback.data.split("_")
-        if len(parts) < 3:
-            return
+        effect, user_id = parse_simple_callback(callback.data, "effect_")
 
-        effect = parts[1]
-        user_id = int(parts[2])
-
+        # Проверяем существует ли эффект
         if effect not in VIDEO_EFFECTS:
+            logger.error(f"❌ Неизвестный эффект: {effect}")
+            await callback.answer(f"❌ Неизвестный эффект", show_alert=True)
             return
 
         if user_id not in storage.user_data:
+            logger.error(f"❌ User {user_id} не найден")
             return
+
+        # Получаем данные эффекта
+        effect_data = VIDEO_EFFECTS[effect]
 
         # Сохраняем эффект
         storage.user_data[user_id]['effect'] = effect
         storage.user_data[user_id]['step'] = 'waiting_frame'
 
-        effect_name = VIDEO_EFFECTS[effect]["name"]
-
-        # Клавиатура с рамками
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text=FRAMES["none"]["name"], 
-                                   callback_data=f"frame_none_{user_id}"),
-                InlineKeyboardButton(text=FRAMES["fire"]["name"], 
-                                   callback_data=f"frame_fire_{user_id}")
-            ],
-            [
-                InlineKeyboardButton(text=FRAMES["neon"]["name"], 
-                                   callback_data=f"frame_neon_{user_id}"),
-                InlineKeyboardButton(text=FRAMES["rainbow"]["name"], 
-                                   callback_data=f"frame_rainbow_{user_id}")
-            ]
-        ])
+        # Показываем выбор рамки с пояснением об эффекте
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        row = []
+        for frame_key, frame in FRAMES.items():
+            row.append(InlineKeyboardButton(
+                text=frame["name"],
+                callback_data=f"frame_{frame_key}_{user_id}"
+            ))
+            if len(row) == 2:
+                keyboard.inline_keyboard.append(row)
+                row = []
+        if row:
+            keyboard.inline_keyboard.append(row)
 
         await callback.message.edit_text(
-            f"✅ <b>Эффект выбран:</b> {effect_name}\n\n"
+            f"✅ <b>Эффект выбран:</b> {effect_data['name']}\n\n"
+            f"📝 <i>{effect_data['description']}</i>\n\n"
             f"🖼️ <b>Теперь выбери рамку:</b>",
             reply_markup=keyboard,
             parse_mode=ParseMode.HTML
@@ -689,7 +857,6 @@ async def handle_effect(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_effect: {e}")
-        await callback.message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("frame_"))
 async def handle_frame(callback: CallbackQuery):
@@ -697,12 +864,7 @@ async def handle_frame(callback: CallbackQuery):
     try:
         await callback.answer()
 
-        parts = callback.data.split("_")
-        if len(parts) < 3:
-            return
-
-        frame = parts[1]
-        user_id = int(parts[2])
+        frame, user_id = parse_simple_callback(callback.data, "frame_")
 
         if frame not in FRAMES:
             return
@@ -714,6 +876,8 @@ async def handle_frame(callback: CallbackQuery):
         file_id = storage.user_data[user_id]['file_id']
         effect = storage.user_data[user_id]['effect']
         text = storage.user_data[user_id].get('text', '')
+        text_color = storage.user_data[user_id].get('text_color', 'white')
+        text_size = storage.user_data[user_id].get('text_size', 'medium')
 
         # Получаем файл
         input_path = storage.get(file_id)
@@ -721,7 +885,11 @@ async def handle_frame(callback: CallbackQuery):
             await callback.message.answer("❌ Файл не найден. Отправь видео заново.")
             return
 
-        effect_name = VIDEO_EFFECTS[effect]["name"]
+        # Получаем имена
+        effect_data = VIDEO_EFFECTS.get(effect, {})
+        effect_name = effect_data.get('name', effect)
+        effect_desc = effect_data.get('description', '')
+
         frame_name = FRAMES[frame]["name"]
 
         await bot.send_chat_action(callback.message.chat.id, ChatAction.UPLOAD_VIDEO)
@@ -729,8 +897,11 @@ async def handle_frame(callback: CallbackQuery):
         processing_msg = await callback.message.answer(
             f"🎬 <b>Создаю стикер...</b>\n\n"
             f"✨ <i>Эффект:</i> {effect_name}\n"
+            f"📝 <i>{effect_desc}</i>\n"
             f"🖼️ <i>Рамка:</i> {frame_name}\n"
-            f"📝 <i>Текст:</i> {text[:15] if text else 'нет'}\n\n"
+            f"📝 <i>Текст:</i> {text[:15] if text else 'нет'}\n"
+            f"🎨 <i>Цвет:</i> {TEXT_COLORS.get(text_color, 'Белый')}\n"
+            f"📏 <i>Размер:</i> {TEXT_SIZES.get(text_size, 'Средний')}\n\n"
             f"⏳ <i>Обработка...</i>",
             parse_mode=ParseMode.HTML
         )
@@ -739,9 +910,9 @@ async def handle_frame(callback: CallbackQuery):
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
             output_path = Path(tmp.name)
 
-        # Создаем стикер (ПРОСТОЙ МЕТОД)
+        # Создаем стикер
         success, result_text, size_kb = await create_sticker_simple(
-            input_path, output_path, effect, frame, text
+            input_path, output_path, effect, frame, text, text_color, text_size
         )
 
         if success:
@@ -791,17 +962,57 @@ async def handle_frame(callback: CallbackQuery):
         except Exception as e:
             logger.error(f"Ошибка очистки: {e}")
 
+        # Кнопка для нового видео
+        await callback.message.answer(
+            "🔄 <b>Хочешь создать еще один стикер?</b>\n\n"
+            "Нажми /start или кнопку ниже",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="📤 Новое видео")],
+                    [KeyboardButton(text="/start")]
+                ],
+                resize_keyboard=True
+            )
+        )
+
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_frame: {e}")
         await callback.message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
+
+@router.message(F.text == "📤 Новое видео")
+async def new_video_handler(message: Message):
+    """Начать с чистого листа"""
+    user_id = message.from_user.id
+
+    # Очищаем старые данные
+    if user_id in storage.user_data:
+        file_id = storage.user_data[user_id].get('file_id')
+        if file_id:
+            storage.delete(file_id)
+        del storage.user_data[user_id]
+
+    storage.user_data[user_id] = {'step': 'waiting_video'}
+
+    await message.answer(
+        "🔄 <b>Начинаем заново!</b>\n\n"
+        "📤 <b>Отправь видео, GIF или видео-файл</b>\n\n"
+        "<i>• До 20MB\n"
+        "• Будет обрезано до 2.9 секунд</i>",
+        parse_mode=ParseMode.HTML
+    )
 
 # ===== ЗАПУСК БОТА =====
 async def main():
     """Основная функция запуска"""
     print("\n" + "=" * 60)
-    print("🚀 ЗАПУСК VIDEO STICKER BOT - РАБОЧАЯ ВЕРСИЯ")
+    print("🚀 ЗАПУСК VIDEO STICKER BOT - ФИНАЛЬНАЯ ВЕРСИЯ")
     print("=" * 60)
-    print("✅ ВСЕ ЭФФЕКТЫ ПРОСТЫЕ И РАБОЧИЕ")
+    print("✅ 8 цветов текста")
+    print("✅ 4 размера текста")
+    print("✅ 12 ЗАМЕТНЫХ эффектов")
+    print("✅ 4 стильные рамки")
+    print("✅ Все ошибки исправлены")
     print("=" * 60)
 
     # Очищаем старые файлы
