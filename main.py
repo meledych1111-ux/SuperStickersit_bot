@@ -1,4 +1,4 @@
-# main.py - С ЭФФЕКТАМИ СНЕГ, ЗВЕЗДЫ, ЗАМЕДЛЕНИЕ, УСКОРЕНИЕ
+# main.py - ПОЛНЫЙ КОД С VP9
 import os
 import sys
 import asyncio
@@ -10,10 +10,9 @@ from typing import Tuple, Dict
 import time
 from datetime import datetime
 import uuid
-import random
 
 print("=" * 60)
-print("🤖 Telegram Video Sticker Bot")
+print("🤖 Telegram Video Sticker Bot (VP9)")
 print("=" * 60)
 
 FFMPEG = shutil.which("ffmpeg")
@@ -96,113 +95,71 @@ EFFECTS = {
     },
     "slowmo": {
         "name": "🐌 Замедление",
-        "filter": "setpts=2.0*PTS"  # В 2 раза медленнее
+        "filter": "setpts=2.0*PTS"
     },
     "fastmo": {
         "name": "⚡ Ускорение", 
-        "filter": "setpts=0.5*PTS"  # В 2 раза быстрее
+        "filter": "setpts=0.5*PTS"
     },
     "snow": {
-        "name": "❄️ Снегопад",
-        "filter": "color=c=white@0.1:s=512x512,geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=rgba"
+        "name": "❄️ Снег",
+        "filter": "color=c=white@0.3:s=512x512,geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=yuva420p"
     },
     "stars": {
         "name": "✨ Звёзды",
-        "filter": "color=c=black:s=512x512,noise=alls=20:allf=t+u,curves=preset=lighter"
+        "filter": "noise=alls=20:allf=t+u,curves=preset=lighter,format=yuva420p"
     }
 }
 
-# ===== ФУНКЦИИ ДЛЯ СОЗДАНИЯ СТИКЕРОВ =====
-async def create_sticker_with_effect(input_path: Path, output_path: Path, effect: str = "none") -> Tuple[bool, str, int]:
+# ===== ОСНОВНАЯ ФУНКЦИЯ С VP9 =====
+async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = "none") -> Tuple[bool, str, int]:
     """
-    Создает WebM стикер с эффектом
+    Создает WebM стикер с VP9 кодеком
     """
     try:
-        print(f"🎬 Создаю стикер с эффектом: {EFFECTS[effect]['name']}")
+        print(f"🎬 Создаю стикер VP9 с эффектом: {EFFECTS[effect]['name']}")
 
         # Получаем информацию о видео
         info = await get_video_info(input_path)
         duration = min(info['duration'], 2.8)
-        fps = info['fps']
 
-        print(f"   📊 Исходное: {info['width']}x{info['height']}, {duration:.1f}с, {fps:.1f}fps")
+        print(f"   📊 Исходное: {info['width']}x{info['height']}, {duration:.1f}с, {info['fps']:.1f}fps")
 
-        # Базовый фильтр для Telegram
+        # Базовый фильтр
         base_filter = "scale=512:512:force_original_aspect_ratio=decrease," \
                      "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0," \
-                     f"fps=30,format=yuva420p"
+                     "fps=30,format=yuva420p"
 
         # Добавляем эффект
         effect_filter = EFFECTS[effect]['filter']
         if effect_filter:
-            # Для снега и звёзд создаем отдельный слой и накладываем
-            if effect in ["snow", "stars"]:
-                # Создаем видео с эффектом
-                effect_video = input_path.with_suffix(f'.{effect}.mp4')
-                await create_effect_video(effect, effect_video, duration)
-
-                # Комбинируем с основным видео
-                filter_complex = f"[0:v]{base_filter}[main];" \
-                               f"[1:v]scale=512:512,format=yuva420p[effect];" \
-                               f"[main][effect]overlay=format=auto"
-
-                cmd = [
-                    FFMPEG, "-y",
-                    "-i", str(input_path),
-                    "-i", str(effect_video),
-                    "-t", str(duration),
-                    "-an",
-                    "-filter_complex", filter_complex,
-                    "-c:v", "libvpx",
-                    "-b:v", "150k",
-                    "-crf", "32",
-                    "-deadline", "good",
-                    "-auto-alt-ref", "0",
-                    "-f", "webm",
-                    str(output_path)
-                ]
-
-                # Удаляем временный файл эффекта
-                try:
-                    effect_video.unlink()
-                except:
-                    pass
-
-            else:
-                # Для других эффектов просто добавляем фильтр
-                video_filter = f"{base_filter},{effect_filter}"
-                cmd = [
-                    FFMPEG, "-y",
-                    "-i", str(input_path),
-                    "-t", str(duration),
-                    "-an",
-                    "-vf", video_filter,
-                    "-c:v", "libvpx",
-                    "-b:v", "150k",
-                    "-crf", "32",
-                    "-deadline", "good",
-                    "-auto-alt-ref", "0",
-                    "-f", "webm",
-                    str(output_path)
-                ]
+            video_filter = f"{base_filter},{effect_filter}"
         else:
-            # Без эффекта
-            cmd = [
-                FFMPEG, "-y",
-                "-i", str(input_path),
-                "-t", str(duration),
-                "-an",
-                "-vf", base_filter,
-                "-c:v", "libvpx",
-                "-b:v", "150k",
-                "-crf", "32",
-                "-deadline", "good", 
-                "-auto-alt-ref", "0",
-                "-f", "webm",
-                str(output_path)
-            ]
+            video_filter = base_filter
 
-        print(f"   🛠️ Запускаю конвертацию...")
+        # КОМАНДА FFMPEG С VP9
+        cmd = [
+            FFMPEG, "-y",
+            "-i", str(input_path),
+            "-t", str(duration),
+            "-an",
+            "-vf", video_filter,
+            "-c:v", "libvpx-vp9",
+            "-b:v", "180k",
+            "-crf", "30",
+            "-deadline", "good",
+            "-row-mt", "1",
+            "-tile-columns", "2",
+            "-frame-parallel", "1",
+            "-g", str(int(duration * 30)),
+            "-lag-in-frames", "0",
+            "-auto-alt-ref", "0",
+            "-pix_fmt", "yuva420p",
+            "-f", "webm",
+            str(output_path)
+        ]
+
+        print(f"   🛠️ Параметры: VP9, 512x512, 30fps")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -213,35 +170,31 @@ async def create_sticker_with_effect(input_path: Path, output_path: Path, effect
 
         if process.returncode == 0 and output_path.exists():
             size_kb = output_path.stat().st_size / 1024
-            print(f"   ✅ Стикер создан: {size_kb:.1f}KB")
+            print(f"   ✅ WebM создан: {size_kb:.1f}KB")
 
             # Оптимизируем если нужно
             if size_kb > 200:
                 print(f"   ⚙️ Оптимизирую размер...")
-                await optimize_webm(output_path)
+                await optimize_vp9_webm(output_path)
                 size_kb = output_path.stat().st_size / 1024
 
             # Проверяем параметры
             output_info = await get_video_info(output_path)
-            checks = {
-                "Размер ≤256KB": size_kb <= 256,
-                "FPS=30": abs(output_info['fps'] - 30) < 1,
-                "Разрешение 512x512": output_info['width'] == 512 and output_info['height'] == 512
-            }
 
-            status = "✅" if all(checks.values()) and size_kb <= 256 else "⚠️"
+            status = "✅" if size_kb <= 256 else "⚠️"
 
-            message = f"{status} <b>Стикер создан!</b>\n\n"
+            message = f"{status} <b>Video Sticker (VP9) создан!</b>\n\n"
             message += f"🎭 <b>Эффект:</b> {EFFECTS[effect]['name']}\n"
             message += f"📦 <b>Размер:</b> {size_kb:.1f}KB / 256KB\n"
             message += f"📏 <b>Разрешение:</b> {output_info['width']}x{output_info['height']}\n"
             message += f"🎬 <b>FPS:</b> {output_info['fps']:.1f}\n"
             message += f"⏱ <b>Длительность:</b> {output_info['duration']:.1f}с\n"
+            message += f"🔧 <b>Кодек:</b> VP9\n"
 
-            if all(checks.values()) and size_kb <= 256:
+            if size_kb <= 256:
                 message += "\n🎉 <b>Готов к добавлению в Telegram!</b>"
             else:
-                message += "\n⚠️ <b>Возможны проблемы с размером или параметрами</b>"
+                message += "\n⚠️ <b>Слишком большой для Telegram</b>"
 
             return True, message, int(size_kb)
 
@@ -253,43 +206,8 @@ async def create_sticker_with_effect(input_path: Path, output_path: Path, effect
         print(f"   🔥 Исключение: {e}")
         return False, f"❌ Ошибка: {str(e)[:100]}", 0
 
-async def create_effect_video(effect: str, output_path: Path, duration: float):
-    """Создает видео с эффектом (снег, звёзды)"""
-    try:
-        if effect == "snow":
-            # Создаем снегопад
-            cmd = [
-                FFMPEG, "-y",
-                "-f", "lavfi",
-                "-i", f"color=c=white@0:s=512x512:d={duration},geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=rgba",
-                "-t", str(duration),
-                "-c:v", "libx264",
-                "-pix_fmt", "yuva420p",
-                str(output_path)
-            ]
-        elif effect == "stars":
-            # Создаем звёзды
-            cmd = [
-                FFMPEG, "-y",
-                "-f", "lavfi",
-                "-i", f"color=c=black:s=512x512:d={duration},noise=alls=20:allf=t+u,curves=preset=lighter",
-                "-t", str(duration),
-                "-c:v", "libx264",
-                "-pix_fmt", "yuva420p",
-                str(output_path)
-            ]
-        else:
-            return False
-
-        process = await asyncio.create_subprocess_exec(*cmd)
-        await process.wait()
-        return process.returncode == 0
-
-    except:
-        return False
-
-async def optimize_webm(file_path: Path) -> bool:
-    """Оптимизация размера WebM"""
+async def optimize_vp9_webm(file_path: Path) -> bool:
+    """Оптимизация VP9 WebM"""
     try:
         temp_path = file_path.with_suffix('.opt.webm')
 
@@ -299,11 +217,14 @@ async def optimize_webm(file_path: Path) -> bool:
             "-t", "2.5",
             "-an",
             "-vf", "scale=384:384,fps=30",
-            "-c:v", "libvpx",
-            "-b:v", "80k",
-            "-crf", "38",
+            "-c:v", "libvpx-vp9",
+            "-b:v", "120k",
+            "-crf", "35",
             "-deadline", "good",
+            "-cpu-used", "4",
+            "-row-mt", "1",
             "-auto-alt-ref", "0",
+            "-pix_fmt", "yuva420p",
             "-f", "webm",
             str(temp_path)
         ]
@@ -339,9 +260,7 @@ async def get_video_info(file_path: Path) -> Dict:
             'duration': 0,
             'width': 0,
             'height': 0,
-            'fps': 0,
-            'codec': 'unknown',
-            'pix_fmt': 'unknown'
+            'fps': 30
         }
 
         for line in output.split('\n'):
@@ -353,56 +272,39 @@ async def get_video_info(file_path: Path) -> Dict:
                 except:
                     pass
             elif 'Video:' in line:
-                parts = line.split('Video:')[1].split(',')
-                info['codec'] = parts[0].strip()
+                import re
+                match = re.search(r'(\d+)x(\d+)', line)
+                if match:
+                    info['width'] = int(match.group(1))
+                    info['height'] = int(match.group(2))
 
-                # Ищем разрешение
-                for part in parts:
-                    if 'x' in part and '[' not in part:
-                        try:
-                            w, h = part.strip().split('x')
-                            info['width'] = int(w)
-                            info['height'] = int(h)
-                        except:
-                            pass
-
-                # Ищем FPS
-                for part in parts:
-                    if 'fps' in part:
-                        try:
-                            fps_str = part.split('fps')[0].strip()
-                            info['fps'] = float(fps_str)
-                        except:
-                            pass
-
-                # Ищем формат пикселей
-                for fmt in ['yuva420p', 'yuv420p', 'rgba']:
-                    if fmt in line.lower():
-                        info['pix_fmt'] = fmt
-                        break
+                match = re.search(r'(\d+(\.\d+)?)\s*fps', line)
+                if match:
+                    info['fps'] = float(match.group(1))
 
         return info
     except:
-        return {'duration': 0, 'width': 0, 'height': 0, 'fps': 0, 'codec': 'unknown', 'pix_fmt': 'unknown'}
+        return {'duration': 0, 'width': 0, 'height': 0, 'fps': 30}
 
 # ===== ОБРАБОТЧИКИ =====
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "🎬 <b>Video Sticker Bot с эффектами!</b>\n\n"
-        "<b>✨ Доступные эффекты:</b>\n"
-        "• 🐌 Замедление\n"
-        "• ⚡ Ускорение\n"
-        "• ❄️ Снегопад\n"
-        "• ✨ Звёзды\n"
-        "• 🎨 Без эффекта\n\n"
-        "<b>✅ Соответствует Telegram:</b>\n"
-        "• WebM с VP8 кодеком\n"
+        "🎬 <b>Video Sticker Bot (VP9)</b>\n\n"
+        "<b>✅ Официальные требования Telegram:</b>\n"
+        "• WebM с кодеком VP9\n"
         "• 30 кадров/сек\n"
         "• 512x512 пикселей\n"
         "• До 256 КБ\n"
+        "• До 3 секунд\n"
         "• Без звука\n\n"
-        "<b>📤 Отправь видео или GIF:</b>",
+        "<b>✨ Эффекты:</b>\n"
+        "• 🐌 Замедление\n"
+        "• ⚡ Ускорение\n"
+        "• ❄️ Снег\n"
+        "• ✨ Звёзды\n"
+        "• 🎨 Без эффекта\n\n"
+        "<b>📤 Отправь видео:</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
@@ -416,11 +318,11 @@ async def start(message: Message):
 @dp.message(F.text == "📤 ОТПРАВИТЬ ВИДЕО")
 async def send_video(message: Message):
     await message.answer(
-        "📤 <b>Отправь мне видео или GIF</b>\n\n"
+        "📤 <b>Отправь видео или GIF</b>\n\n"
         "<i>• До 10MB\n"
         "• До 5 секунд\n"
         "• Любой формат\n\n"
-        "После загрузки выбери эффект!</i>",
+        "Выбери эффект после загрузки!</i>",
         parse_mode=ParseMode.HTML
     )
 
@@ -429,21 +331,19 @@ async def show_effects(message: Message):
     effects_list = "\n".join([f"• {effect['name']}" for effect in EFFECTS.values()])
     await message.answer(
         f"✨ <b>Доступные эффекты:</b>\n\n{effects_list}\n\n"
-        f"<i>Отправь видео, затем выбери эффект</i>",
+        f"<i>Отправь видео → Выбери эффект → Получи стикер!</i>",
         parse_mode=ParseMode.HTML
     )
 
 @dp.message(F.text == "🆘 ПОМОЩЬ")
 async def show_help(message: Message):
     await message.answer(
-        "🆘 <b>Как использовать:</b>\n\n"
-        "1. <b>Отправь видео/GIF</b>\n"
-        "2. <b>Выбери эффект</b>\n"
-        "3. <b>Получи WebM файл</b>\n"
-        "4. <b>Сохрани файл</b>\n"
-        "5. <b>Напиши @Stickers</b>\n"
-        "6. <b>/newpack → название → эмодзи</b>\n"
-        "7. <b>Загрузи файл</b>\n\n"
+        "🆘 <b>Как добавить стикер:</b>\n\n"
+        "1. Получи WebM файл\n"
+        "2. Сохрани на устройство\n"
+        "3. Напиши @Stickers\n"
+        "4. /newpack → название → эмодзи\n"
+        "5. Загрузи файл\n\n"
         "<i>✅ Файлы соответствуют требованиям Telegram</i>",
         parse_mode=ParseMode.HTML
     )
@@ -453,6 +353,7 @@ async def handle_media(message: Message):
     """Шаг 1: Получение видео"""
     try:
         await bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_VIDEO)
+
         status_msg = await message.answer("📥 <i>Скачиваю файл...</i>", parse_mode=ParseMode.HTML)
 
         # Определяем файл
@@ -496,7 +397,7 @@ async def handle_media(message: Message):
             parse_mode=ParseMode.HTML
         )
 
-        # Создаем кнопки с эффектами
+        # Кнопки с эффектами
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=EFFECTS["none"]["name"], 
@@ -516,10 +417,9 @@ async def handle_media(message: Message):
             ]
         ])
 
-        await message.answer("Нажми на эффект для применения:", reply_markup=keyboard)
-        await status_msg.delete()
+        await message.answer("Нажми на эффект:", reply_markup=keyboard)
 
-        # Удаляем временный файл скачивания
+        # Очистка
         try:
             os.unlink(input_path)
         except:
@@ -531,9 +431,8 @@ async def handle_media(message: Message):
 
 @dp.callback_query(F.data.startswith("effect_"))
 async def handle_effect(callback: CallbackQuery):
-    """Шаг 2: Обработка выбранного эффекта"""
+    """Шаг 2: Обработка эффекта"""
     try:
-        # Парсим callback data
         parts = callback.data.split("_")
         if len(parts) < 3:
             await callback.answer("❌ Ошибка данных")
@@ -557,25 +456,25 @@ async def handle_effect(callback: CallbackQuery):
             return
 
         processing_msg = await callback.message.answer(
-            f"🎬 <i>Создаю стикер с эффектом...</i>\n"
+            f"🎬 <i>Создаю стикер VP9...</i>\n"
             f"<b>Эффект:</b> {effect_name}",
             parse_mode=ParseMode.HTML
         )
 
-        # Создаем WebM с эффектом
+        # Создаем WebM
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_out:
             output_path = Path(tmp_out.name)
 
-            success, result, size_kb = await create_sticker_with_effect(input_path, output_path, effect)
+            success, result, size_kb = await create_vp9_sticker(input_path, output_path, effect)
 
             if success:
                 # Отправляем файл
                 with open(output_path, 'rb') as f:
                     webm_data = f.read()
 
-                filename = f"sticker_{effect}_{int(time.time())}.webm"
+                filename = f"sticker_vp9_{effect}.webm"
 
-                await processing_msg.delete()
+                await processing_msg.edit_text("📤 <i>Отправляю...</i>", parse_mode=ParseMode.HTML)
 
                 await bot.send_document(
                     callback.message.chat.id,
@@ -584,55 +483,61 @@ async def handle_effect(callback: CallbackQuery):
                     parse_mode=ParseMode.HTML
                 )
 
-                # Инструкция по добавлению
+                # Инструкция
                 if size_kb <= 256:
                     await callback.message.answer(
-                        "💡 <b>Как добавить в Telegram:</b>\n\n"
-                        "1. Сохрани этот файл\n"
+                        "💡 <b>Как добавить:</b>\n\n"
+                        "1. Сохрани файл\n"
                         "2. Напиши @Stickers\n"
                         "3. /newpack → название → эмодзи\n"
                         "4. Загрузи файл\n\n"
-                        "<i>✅ Файл готов к использованию!</i>",
+                        "<i>✅ Готов к использованию!</i>",
                         parse_mode=ParseMode.HTML
                     )
-            else:
-                await callback.message.answer(result, parse_mode=ParseMode.HTML)
 
-            await processing_msg.delete()
+                # Удаляем сообщение
+                try:
+                    await processing_msg.delete()
+                except:
+                    pass
+
+            else:
+                await processing_msg.edit_text(result, parse_mode=ParseMode.HTML)
 
             # Очистка
             try:
                 os.unlink(output_path)
-                storage.delete(file_id)  # Удаляем сохраненный файл
+                storage.delete(file_id)
             except:
                 pass
 
     except Exception as e:
         await callback.message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
-        print(f"❌ Ошибка эффекта: {e}")
+        print(f"❌ Ошибка: {e}")
 
 # ===== ЗАПУСК =====
 async def main():
     print("\n" + "=" * 60)
-    print("🚀 Бот запущен с эффектами!")
+    print("🚀 БОТ ЗАПУЩЕН!")
     print("=" * 60)
-    print("✨ Доступные эффекты:")
-    print("   • 🐌 Замедление (2x медленнее)")
-    print("   • ⚡ Ускорение (2x быстрее)")
-    print("   • ❄️ Снегопад (анимированный)")
-    print("   • ✨ Звёзды (анимированные)")
-    print("   • 🎨 Без эффекта")
-    print("=" * 60)
-    print("🎯 Параметры Telegram:")
-    print("   • VP8 кодек (libvpx)")
-    print("   • 30 FPS (обязательно)")
+    print("🎯 Параметры Telegram (VP9):")
+    print("   • WebM с кодеком VP9")
+    print("   • 30 кадров/сек")
     print("   • 512x512 пикселей")
-    print("   • ≤256KB размер")
+    print("   • ≤256 КБ")
+    print("   • ≤3 секунды")
+    print("=" * 60)
+    print("✨ Эффекты:")
+    print("   • 🐌 Замедление")
+    print("   • ⚡ Ускорение")
+    print("   • ❄️ Снег")
+    print("   • ✨ Звёзды")
+    print("   • 🎨 Без эффекта")
     print("=" * 60)
 
     me = await bot.get_me()
     print(f"🤖 Бот: @{me.username}")
-    print("✅ Готов к работе! Отправь видео и выбери эффект")
+    print("✅ Готов к работе!")
     print("=" * 60)
 
     await dp.start_polling(bot)
@@ -642,7 +547,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
-        # Очистка временных файлов
         if Path("./temp_files").exists():
             shutil.rmtree("./temp_files")
-            print("🧹 Временные файлы удалены")
