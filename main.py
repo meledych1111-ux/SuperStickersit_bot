@@ -1,4 +1,4 @@
-# main.py - ПОЛНЫЙ КОД С VP9
+# main.py - БОТ С ТЕКСТОМ И TIKTOK ЭФФЕКТАМИ
 import os
 import sys
 import asyncio
@@ -6,13 +6,14 @@ import tempfile
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 import time
 from datetime import datetime
 import uuid
+import textwrap
 
 print("=" * 60)
-print("🤖 Telegram Video Sticker Bot (VP9)")
+print("🤖 Video Sticker Bot с текстом и эффектами")
 print("=" * 60)
 
 FFMPEG = shutil.which("ffmpeg")
@@ -54,6 +55,7 @@ class FileStorage:
         self.storage_dir = Path("./temp_files")
         self.storage_dir.mkdir(exist_ok=True)
         self.files = {}
+        self.user_data = {}  # user_id -> {text: str, effect: str, file_id: str}
         print(f"📁 Хранилище: {self.storage_dir.absolute()}")
 
     def save(self, user_id: int, file_path: Path) -> str:
@@ -87,37 +89,131 @@ class FileStorage:
 
 storage = FileStorage()
 
-# ===== ЭФФЕКТЫ =====
-EFFECTS = {
+# ===== ТИКТОК ЭФФЕКТЫ =====
+TIKTOK_EFFECTS = {
     "none": {
         "name": "🎨 Без эффекта",
-        "filter": ""
+        "filter": "",
+        "description": "Обычное видео без эффектов"
     },
     "slowmo": {
-        "name": "🐌 Замедление",
-        "filter": "setpts=2.0*PTS"
+        "name": "🐌 Супер-замедление",
+        "filter": "setpts=2.5*PTS",
+        "description": "Видео в 2.5 раза медленнее"
     },
     "fastmo": {
-        "name": "⚡ Ускорение", 
-        "filter": "setpts=0.5*PTS"
+        "name": "⚡ Супер-ускорение", 
+        "filter": "setpts=0.4*PTS",
+        "description": "Видео в 2.5 раза быстрее"
     },
-    "snow": {
-        "name": "❄️ Снег",
-        "filter": "color=c=white@0.3:s=512x512,geq=r='random(1)*255':g='random(1)*255':b='random(1)*255',format=yuva420p"
+    "vhs": {
+        "name": "📼 VHS Эффект",
+        "filter": "noise=alls=30:allf=t+u,curves=preset=vintage,eq=saturation=0.8",
+        "description": "Старый видеомагнитофон"
     },
-    "stars": {
-        "name": "✨ Звёзды",
-        "filter": "noise=alls=20:allf=t+u,curves=preset=lighter,format=yuva420p"
+    "glitch": {
+        "name": "🌀 Глитч-эффект",
+        "filter": "noise=alls=50:allf=t+u,colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,hue=H=2*PI*t",
+        "description": "Цифровой глитч с цветами"
+    },
+    "neon": {
+        "name": "🌃 Неоновый",
+        "filter": "curves=preset=color_negative,eq=brightness=0.1:saturation=2,convolution='0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0'",
+        "description": "Неоновые цвета и свечение"
+    },
+    "pixel": {
+        "name": "🎮 Пиксель-арт",
+        "filter": "scale=128:128:flags=neighbor,scale=512:512:flags=neighbor",
+        "description": "Ретро пиксельная графика"
+    },
+    "mirror": {
+        "name": "🪞 Зеркальный",
+        "filter": "crop=iw/2:ih:0:0,split[left][tmp];[tmp]hflip[right];[left][right]hstack",
+        "description": "Симметричное отражение"
+    },
+    "vibrant": {
+        "name": "🌈 Яркие цвета",
+        "filter": "eq=saturation=1.8:brightness=0.1:contrast=1.3",
+        "description": "Усиленные насыщенные цвета"
+    },
+    "shake": {
+        "name": "📳 Дрожание",
+        "filter": "crop=iw-10:ih-10:5+5*sin(2*PI*t):5+5*cos(2*PI*t)",
+        "description": "Эффект дрожащей камеры"
+    },
+    "zoom": {
+        "name": "🔍 Зум-эффект",
+        "filter": "zoompan=z='min(zoom+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':fps=30",
+        "description": "Плавное увеличение"
+    },
+    "wave": {
+        "name": "🌊 Волновой",
+        "filter": "waveform=m=0:desc=0",
+        "description": "Волнообразные искажения"
     }
 }
 
-# ===== ОСНОВНАЯ ФУНКЦИЯ С VP9 =====
-async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = "none") -> Tuple[bool, str, int]:
+# ===== ФУНКЦИЯ ДЛЯ ДОБАВЛЕНИЯ ТЕКСТА =====
+def create_text_filter(text: str, effect: str) -> str:
+    """Создает фильтр для добавления текста с эффектами"""
+    if not text:
+        return ""
+
+    # Очищаем текст от спецсимволов
+    safe_text = text.replace(':', '\\:').replace("'", "\\'").replace('"', '\\"')
+
+    # Разбиваем длинный текст на строки
+    lines = textwrap.wrap(safe_text, width=20)
+
+    # Базовые стили текста
+    fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+    # Разные стили для разных эффектов
+    if effect == "neon":
+        # Неоновый текст с тенью
+        text_filter = f"drawtext=fontfile={fontfile}:text='{safe_text}':" \
+                     f"fontcolor=cyan@0.9:fontsize=48:" \
+                     f"box=1:boxcolor=black@0.4:boxborderw=10:" \
+                     f"x=(w-text_w)/2:y=h-text_h-50:" \
+                     f"shadowcolor=magenta@0.7:shadowx=4:shadowy=4"
+    elif effect == "vhs":
+        # Текст в стиле VHS
+        text_filter = f"drawtext=fontfile={fontfile}:text='{safe_text}':" \
+                     f"fontcolor=white:fontsize=44:" \
+                     f"x=(w-text_w)/2:y=h-text_h-40:" \
+                     f"enable='between(t,0,3)':" \
+                     f"alpha='if(lt(t,2.5),1,if(lt(t,2.8),0.5,0))'"
+    elif effect == "glitch":
+        # Глитч-текст
+        text_filter = f"drawtext=fontfile={fontfile}:text='{safe_text}':" \
+                     f"fontcolor=0xFF00FF@0.9:fontsize=50:" \
+                     f"x='(w-text_w)/2+5*sin(10*PI*t)':" \
+                     f"y='h-text_h-30+3*cos(15*PI*t)':" \
+                     f"alpha='0.8+0.2*sin(20*PI*t)'"
+    else:
+        # Стандартный текст
+        text_filter = f"drawtext=fontfile={fontfile}:text='{safe_text}':" \
+                     f"fontcolor=white:fontsize=50:" \
+                     f"borderw=3:bordercolor=black@0.7:" \
+                     f"x=(w-text_w)/2:y=h-text_h-30"
+
+    return text_filter
+
+# ===== ОСНОВНАЯ ФУНКЦИЯ =====
+async def create_sticker_with_text_and_effect(
+    input_path: Path, 
+    output_path: Path, 
+    effect: str = "none",
+    text: str = ""
+) -> Tuple[bool, str, int]:
     """
-    Создает WebM стикер с VP9 кодеком
+    Создает WebM стикер с текстом и эффектом
     """
     try:
-        print(f"🎬 Создаю стикер VP9 с эффектом: {EFFECTS[effect]['name']}")
+        effect_name = TIKTOK_EFFECTS[effect]["name"]
+        print(f"🎬 Создаю стикер: {effect_name}")
+        if text:
+            print(f"   📝 Текст: {text[:30]}...")
 
         # Получаем информацию о видео
         info = await get_video_info(input_path)
@@ -125,26 +221,34 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
 
         print(f"   📊 Исходное: {info['width']}x{info['height']}, {duration:.1f}с, {info['fps']:.1f}fps")
 
-        # Базовый фильтр
+        # Базовый фильтр для Telegram
         base_filter = "scale=512:512:force_original_aspect_ratio=decrease," \
                      "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0," \
                      "fps=30,format=yuva420p"
 
-        # Добавляем эффект
-        effect_filter = EFFECTS[effect]['filter']
+        # Добавляем TikTok эффект
+        effect_filter = TIKTOK_EFFECTS[effect]["filter"]
+
+        # Добавляем текст
+        text_filter = create_text_filter(text, effect)
+
+        # Комбинируем все фильтры
+        filters = [base_filter]
         if effect_filter:
-            video_filter = f"{base_filter},{effect_filter}"
-        else:
-            video_filter = base_filter
+            filters.append(effect_filter)
+        if text_filter:
+            filters.append(text_filter)
+
+        video_filter = ",".join(filter(None, filters))
 
         # КОМАНДА FFMPEG С VP9
         cmd = [
             FFMPEG, "-y",
             "-i", str(input_path),
             "-t", str(duration),
-            "-an",
+            "-an",  # Без звука
             "-vf", video_filter,
-            "-c:v", "libvpx-vp9",
+            "-c:v", "libvpx-vp9",  # VP9 кодек
             "-b:v", "180k",
             "-crf", "30",
             "-deadline", "good",
@@ -159,7 +263,7 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
             str(output_path)
         ]
 
-        print(f"   🛠️ Параметры: VP9, 512x512, 30fps")
+        print(f"   🛠️ Запускаю конвертацию с эффектом...")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -170,12 +274,12 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
 
         if process.returncode == 0 and output_path.exists():
             size_kb = output_path.stat().st_size / 1024
-            print(f"   ✅ WebM создан: {size_kb:.1f}KB")
+            print(f"   ✅ Стикер создан: {size_kb:.1f}KB")
 
             # Оптимизируем если нужно
             if size_kb > 200:
                 print(f"   ⚙️ Оптимизирую размер...")
-                await optimize_vp9_webm(output_path)
+                await optimize_webm(output_path)
                 size_kb = output_path.stat().st_size / 1024
 
             # Проверяем параметры
@@ -183,8 +287,10 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
 
             status = "✅" if size_kb <= 256 else "⚠️"
 
-            message = f"{status} <b>Video Sticker (VP9) создан!</b>\n\n"
-            message += f"🎭 <b>Эффект:</b> {EFFECTS[effect]['name']}\n"
+            message = f"{status} <b>Video Sticker создан!</b>\n\n"
+            message += f"🎭 <b>Эффект:</b> {effect_name}\n"
+            if text:
+                message += f"📝 <b>Текст:</b> {text[:50]}{'...' if len(text) > 50 else ''}\n"
             message += f"📦 <b>Размер:</b> {size_kb:.1f}KB / 256KB\n"
             message += f"📏 <b>Разрешение:</b> {output_info['width']}x{output_info['height']}\n"
             message += f"🎬 <b>FPS:</b> {output_info['fps']:.1f}\n"
@@ -193,6 +299,7 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
 
             if size_kb <= 256:
                 message += "\n🎉 <b>Готов к добавлению в Telegram!</b>"
+                message += f"\n<i>{TIKTOK_EFFECTS[effect]['description']}</i>"
             else:
                 message += "\n⚠️ <b>Слишком большой для Telegram</b>"
 
@@ -200,14 +307,54 @@ async def create_vp9_sticker(input_path: Path, output_path: Path, effect: str = 
 
         error = stderr.decode('utf-8', errors='ignore')
         print(f"   ❌ Ошибка: {error[:200]}")
-        return False, "❌ Не удалось создать стикер", 0
+
+        # Пробуем упрощенный метод
+        return await create_simple_sticker(input_path, output_path, effect, text)
 
     except Exception as e:
         print(f"   🔥 Исключение: {e}")
         return False, f"❌ Ошибка: {str(e)[:100]}", 0
 
-async def optimize_vp9_webm(file_path: Path) -> bool:
-    """Оптимизация VP9 WebM"""
+async def create_simple_sticker(input_path: Path, output_path: Path, effect: str, text: str) -> Tuple[bool, str, int]:
+    """Упрощенный метод создания стикера"""
+    try:
+        duration = 2.5
+
+        # Только базовые фильтры
+        base_filter = "scale=512:512,fps=30,format=yuva420p"
+        text_filter = create_text_filter(text, "none") if text else ""
+
+        video_filter = base_filter
+        if text_filter:
+            video_filter = f"{base_filter},{text_filter}"
+
+        cmd = [
+            FFMPEG, "-y",
+            "-i", str(input_path),
+            "-t", str(duration),
+            "-an",
+            "-vf", video_filter,
+            "-c:v", "libvpx-vp9",
+            "-b:v", "150k",
+            "-crf", "32",
+            "-deadline", "good",
+            "-f", "webm",
+            str(output_path)
+        ]
+
+        process = await asyncio.create_subprocess_exec(*cmd)
+        await process.wait()
+
+        if output_path.exists():
+            size_kb = output_path.stat().st_size / 1024
+            return True, f"✅ Стикер создан (упрощенный)\nРазмер: {size_kb:.1f}KB", int(size_kb)
+
+        return False, "❌ Не удалось создать стикер", 0
+    except Exception as e:
+        return False, f"❌ Ошибка: {str(e)}", 0
+
+async def optimize_webm(file_path: Path) -> bool:
+    """Оптимизация WebM"""
     try:
         temp_path = file_path.with_suffix('.opt.webm')
 
@@ -218,13 +365,9 @@ async def optimize_vp9_webm(file_path: Path) -> bool:
             "-an",
             "-vf", "scale=384:384,fps=30",
             "-c:v", "libvpx-vp9",
-            "-b:v", "120k",
+            "-b:v", "100k",
             "-crf", "35",
             "-deadline", "good",
-            "-cpu-used", "4",
-            "-row-mt", "1",
-            "-auto-alt-ref", "0",
-            "-pix_fmt", "yuva420p",
             "-f", "webm",
             str(temp_path)
         ]
@@ -290,26 +433,28 @@ async def get_video_info(file_path: Path) -> Dict:
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "🎬 <b>Video Sticker Bot (VP9)</b>\n\n"
-        "<b>✅ Официальные требования Telegram:</b>\n"
-        "• WebM с кодеком VP9\n"
-        "• 30 кадров/сек\n"
-        "• 512x512 пикселей\n"
-        "• До 256 КБ\n"
-        "• До 3 секунд\n"
-        "• Без звука\n\n"
-        "<b>✨ Эффекты:</b>\n"
-        "• 🐌 Замедление\n"
-        "• ⚡ Ускорение\n"
-        "• ❄️ Снег\n"
-        "• ✨ Звёзды\n"
+        "🎬 <b>Video Sticker Bot с TikTok-эффектами!</b>\n\n"
+        "<b>✨ НОВИНКА:</b> Добавление текста на видео!\n\n"
+        "<b>🎭 12 крутых эффектов:</b>\n"
+        "• 🐌 Супер-замедление\n"
+        "• ⚡ Супер-ускорение\n"
+        "• 📼 VHS стиль\n"
+        "• 🌀 Глитч-эффект\n"
+        "• 🌃 Неоновый\n"
+        "• 🎮 Пиксель-арт\n"
+        "• 🪞 Зеркальный\n"
+        "• 🌈 Яркие цвета\n"
+        "• 📳 Дрожание\n"
+        "• 🔍 Зум-эффект\n"
+        "• 🌊 Волновой\n"
         "• 🎨 Без эффекта\n\n"
-        "<b>📤 Отправь видео:</b>",
+        "<b>📝 Можно добавить текст на видео!</b>\n\n"
+        "<b>📤 Отправь видео и выбери эффект:</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📤 ОТПРАВИТЬ ВИДЕО")],
-                [KeyboardButton(text="✨ ЭФФЕКТЫ"), KeyboardButton(text="🆘 ПОМОЩЬ")]
+                [KeyboardButton(text="🎭 ЭФФЕКТЫ"), KeyboardButton(text="📝 ДОБАВИТЬ ТЕКСТ")]
             ],
             resize_keyboard=True
         )
@@ -317,41 +462,52 @@ async def start(message: Message):
 
 @dp.message(F.text == "📤 ОТПРАВИТЬ ВИДЕО")
 async def send_video(message: Message):
+    user_id = message.from_user.id
+    storage.user_data[user_id] = {'step': 'waiting_video'}
+
     await message.answer(
-        "📤 <b>Отправь видео или GIF</b>\n\n"
+        "📤 <b>Отправь мне видео или GIF</b>\n\n"
         "<i>• До 10MB\n"
         "• До 5 секунд\n"
         "• Любой формат\n\n"
-        "Выбери эффект после загрузки!</i>",
+        "После загрузки сможешь добавить текст и выбрать эффект!</i>",
         parse_mode=ParseMode.HTML
     )
 
-@dp.message(F.text == "✨ ЭФФЕКТЫ")
+@dp.message(F.text == "🎭 ЭФФЕКТЫ")
 async def show_effects(message: Message):
-    effects_list = "\n".join([f"• {effect['name']}" for effect in EFFECTS.values()])
+    effects_text = ""
+    for i, (key, effect) in enumerate(TIKTOK_EFFECTS.items(), 1):
+        effects_text += f"{i}. <b>{effect['name']}</b>\n   <i>{effect['description']}</i>\n\n"
+
     await message.answer(
-        f"✨ <b>Доступные эффекты:</b>\n\n{effects_list}\n\n"
-        f"<i>Отправь видео → Выбери эффект → Получи стикер!</i>",
+        f"🎭 <b>Доступные TikTok-эффекты:</b>\n\n{effects_text}"
+        f"<i>Отправь видео → Выбери эффект → Получи крутой стикер!</i>",
         parse_mode=ParseMode.HTML
     )
 
-@dp.message(F.text == "🆘 ПОМОЩЬ")
-async def show_help(message: Message):
-    await message.answer(
-        "🆘 <b>Как добавить стикер:</b>\n\n"
-        "1. Получи WebM файл\n"
-        "2. Сохрани на устройство\n"
-        "3. Напиши @Stickers\n"
-        "4. /newpack → название → эмодзи\n"
-        "5. Загрузи файл\n\n"
-        "<i>✅ Файлы соответствуют требованиям Telegram</i>",
-        parse_mode=ParseMode.HTML
-    )
+@dp.message(F.text == "📝 ДОБАВИТЬ ТЕКСТ")
+async def add_text_prompt(message: Message):
+    user_id = message.from_user.id
+    if user_id in storage.user_data and 'file_id' in storage.user_data[user_id]:
+        storage.user_data[user_id]['step'] = 'waiting_text'
+        await message.answer(
+            "📝 <b>Введи текст для видео:</b>\n\n"
+            "<i>• До 50 символов\n"
+            "• Текст появится в нижней части видео\n"
+            "• Можно использовать эмодзи 😊\n\n"
+            "Или отправь /skip чтобы пропустить</i>",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await message.answer("❌ Сначала отправь видео!")
 
 @dp.message(F.video | F.animation | F.document)
 async def handle_media(message: Message):
     """Шаг 1: Получение видео"""
     try:
+        user_id = message.from_user.id
+
         await bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_VIDEO)
 
         status_msg = await message.answer("📥 <i>Скачиваю файл...</i>", parse_mode=ParseMode.HTML)
@@ -389,37 +545,23 @@ async def handle_media(message: Message):
         print(f"📥 Файл скачан: {file_size/1024:.1f}KB")
 
         # ✅ СОХРАНЯЕМ ФАЙЛ
-        saved_id = storage.save(message.from_user.id, input_path)
+        saved_id = storage.save(user_id, input_path)
+
+        # Сохраняем данные пользователя
+        storage.user_data[user_id] = {
+            'file_id': saved_id,
+            'step': 'waiting_text',
+            'text': ''
+        }
 
         await status_msg.edit_text(
-            "✅ <b>Файл получен!</b>\n\n"
-            "✨ <b>Выбери эффект:</b>",
+            "✅ <b>Видео получено!</b>\n\n"
+            "📝 <b>Хочешь добавить текст на видео?</b>\n\n"
+            "Отправь текст (до 50 символов) или /skip чтобы пропустить",
             parse_mode=ParseMode.HTML
         )
 
-        # Кнопки с эффектами
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text=EFFECTS["none"]["name"], 
-                                   callback_data=f"effect_none_{saved_id}"),
-                InlineKeyboardButton(text=EFFECTS["slowmo"]["name"], 
-                                   callback_data=f"effect_slowmo_{saved_id}")
-            ],
-            [
-                InlineKeyboardButton(text=EFFECTS["fastmo"]["name"], 
-                                   callback_data=f"effect_fastmo_{saved_id}"),
-                InlineKeyboardButton(text=EFFECTS["snow"]["name"], 
-                                   callback_data=f"effect_snow_{saved_id}")
-            ],
-            [
-                InlineKeyboardButton(text=EFFECTS["stars"]["name"], 
-                                   callback_data=f"effect_stars_{saved_id}")
-            ]
-        ])
-
-        await message.answer("Нажми на эффект:", reply_markup=keyboard)
-
-        # Очистка
+        # Очистка временного файла
         try:
             os.unlink(input_path)
         except:
@@ -429,9 +571,147 @@ async def handle_media(message: Message):
         await message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
         print(f"❌ Ошибка: {e}")
 
+@dp.message(F.text & ~F.text.startswith("/"))
+async def handle_text_input(message: Message):
+    """Шаг 2: Получение текста"""
+    try:
+        user_id = message.from_user.id
+
+        if user_id not in storage.user_data:
+            await message.answer("❌ Сначала отправь видео!")
+            return
+
+        if storage.user_data[user_id].get('step') != 'waiting_text':
+            return
+
+        text = message.text.strip()
+
+        if len(text) > 50:
+            await message.answer("❌ Слишком длинный текст! Максимум 50 символов.")
+            return
+
+        # Сохраняем текст
+        storage.user_data[user_id]['text'] = text
+        storage.user_data[user_id]['step'] = 'waiting_effect'
+
+        await message.answer(
+            f"✅ <b>Текст сохранен:</b> {text}\n\n"
+            f"🎭 <b>Теперь выбери эффект:</b>",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Показываем кнопки с эффектами
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["slowmo"]["name"], 
+                                   callback_data=f"effect_slowmo_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["fastmo"]["name"], 
+                                   callback_data=f"effect_fastmo_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["vhs"]["name"], 
+                                   callback_data=f"effect_vhs_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["glitch"]["name"], 
+                                   callback_data=f"effect_glitch_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["neon"]["name"], 
+                                   callback_data=f"effect_neon_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["pixel"]["name"], 
+                                   callback_data=f"effect_pixel_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["mirror"]["name"], 
+                                   callback_data=f"effect_mirror_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["vibrant"]["name"], 
+                                   callback_data=f"effect_vibrant_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["shake"]["name"], 
+                                   callback_data=f"effect_shake_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["zoom"]["name"], 
+                                   callback_data=f"effect_zoom_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["wave"]["name"], 
+                                   callback_data=f"effect_wave_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["none"]["name"], 
+                                   callback_data=f"effect_none_{user_id}")
+            ]
+        ])
+
+        await message.answer("Нажми на эффект для применения:", reply_markup=keyboard)
+
+    except Exception as e:
+        await message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
+
+@dp.message(Command("skip"))
+async def skip_text(message: Message):
+    """Пропуск добавления текста"""
+    try:
+        user_id = message.from_user.id
+
+        if user_id not in storage.user_data:
+            await message.answer("❌ Сначала отправь видео!")
+            return
+
+        storage.user_data[user_id]['text'] = ''
+        storage.user_data[user_id]['step'] = 'waiting_effect'
+
+        await message.answer(
+            "⏭️ <b>Пропускаем текст</b>\n\n"
+            "🎭 <b>Выбери эффект:</b>",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Показываем те же кнопки с эффектами
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["slowmo"]["name"], 
+                                   callback_data=f"effect_slowmo_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["fastmo"]["name"], 
+                                   callback_data=f"effect_fastmo_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["vhs"]["name"], 
+                                   callback_data=f"effect_vhs_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["glitch"]["name"], 
+                                   callback_data=f"effect_glitch_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["neon"]["name"], 
+                                   callback_data=f"effect_neon_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["pixel"]["name"], 
+                                   callback_data=f"effect_pixel_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["mirror"]["name"], 
+                                   callback_data=f"effect_mirror_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["vibrant"]["name"], 
+                                   callback_data=f"effect_vibrant_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["shake"]["name"], 
+                                   callback_data=f"effect_shake_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["zoom"]["name"], 
+                                   callback_data=f"effect_zoom_{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["wave"]["name"], 
+                                   callback_data=f"effect_wave_{user_id}"),
+                InlineKeyboardButton(text=TIKTOK_EFFECTS["none"]["name"], 
+                                   callback_data=f"effect_none_{user_id}")
+            ]
+        ])
+
+        await message.answer("Нажми на эффект:", reply_markup=keyboard)
+
+    except Exception as e:
+        await message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
+
 @dp.callback_query(F.data.startswith("effect_"))
 async def handle_effect(callback: CallbackQuery):
-    """Шаг 2: Обработка эффекта"""
+    """Шаг 3: Обработка эффекта"""
     try:
         parts = callback.data.split("_")
         if len(parts) < 3:
@@ -439,14 +719,22 @@ async def handle_effect(callback: CallbackQuery):
             return
 
         effect = parts[1]
-        file_id = "_".join(parts[2:])
+        user_id = int(parts[2])
 
-        if effect not in EFFECTS:
+        if effect not in TIKTOK_EFFECTS:
             await callback.answer("❌ Неизвестный эффект")
             return
 
-        effect_name = EFFECTS[effect]["name"]
+        if user_id not in storage.user_data or 'file_id' not in storage.user_data[user_id]:
+            await callback.answer("❌ Данные не найдены")
+            return
+
+        effect_name = TIKTOK_EFFECTS[effect]["name"]
         await callback.answer(f"Выбран: {effect_name}")
+
+        # Получаем данные пользователя
+        file_id = storage.user_data[user_id]['file_id']
+        text = storage.user_data[user_id].get('text', '')
 
         # Получаем сохраненный файл
         try:
@@ -456,8 +744,9 @@ async def handle_effect(callback: CallbackQuery):
             return
 
         processing_msg = await callback.message.answer(
-            f"🎬 <i>Создаю стикер VP9...</i>\n"
-            f"<b>Эффект:</b> {effect_name}",
+            f"🎬 <i>Создаю стикер с эффектом...</i>\n"
+            f"<b>Эффект:</b> {effect_name}\n"
+            f"{f'<b>Текст:</b> {text}' if text else ''}",
             parse_mode=ParseMode.HTML
         )
 
@@ -465,16 +754,18 @@ async def handle_effect(callback: CallbackQuery):
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_out:
             output_path = Path(tmp_out.name)
 
-            success, result, size_kb = await create_vp9_sticker(input_path, output_path, effect)
+            success, result, size_kb = await create_sticker_with_text_and_effect(
+                input_path, output_path, effect, text
+            )
 
             if success:
                 # Отправляем файл
                 with open(output_path, 'rb') as f:
                     webm_data = f.read()
 
-                filename = f"sticker_vp9_{effect}.webm"
+                filename = f"sticker_{effect}_{int(time.time())}.webm"
 
-                await processing_msg.edit_text("📤 <i>Отправляю...</i>", parse_mode=ParseMode.HTML)
+                await processing_msg.edit_text("📤 <i>Отправляю результат...</i>", parse_mode=ParseMode.HTML)
 
                 await bot.send_document(
                     callback.message.chat.id,
@@ -486,16 +777,15 @@ async def handle_effect(callback: CallbackQuery):
                 # Инструкция
                 if size_kb <= 256:
                     await callback.message.answer(
-                        "💡 <b>Как добавить:</b>\n\n"
-                        "1. Сохрани файл\n"
+                        "💡 <b>Как добавить в Telegram:</b>\n\n"
+                        "1. Сохрани этот файл\n"
                         "2. Напиши @Stickers\n"
                         "3. /newpack → название → эмодзи\n"
                         "4. Загрузи файл\n\n"
-                        "<i>✅ Готов к использованию!</i>",
+                        "<i>✅ Стикер готов к использованию!</i>",
                         parse_mode=ParseMode.HTML
                     )
 
-                # Удаляем сообщение
                 try:
                     await processing_msg.delete()
                 except:
@@ -508,36 +798,40 @@ async def handle_effect(callback: CallbackQuery):
             try:
                 os.unlink(output_path)
                 storage.delete(file_id)
+                if user_id in storage.user_data:
+                    del storage.user_data[user_id]
             except:
                 pass
 
     except Exception as e:
         await callback.message.answer(f"❌ <b>Ошибка:</b> {str(e)[:200]}", parse_mode=ParseMode.HTML)
-        print(f"❌ Ошибка: {e}")
+        print(f"❌ Ошибка эффекта: {e}")
 
 # ===== ЗАПУСК =====
 async def main():
     print("\n" + "=" * 60)
-    print("🚀 БОТ ЗАПУЩЕН!")
+    print("🚀 БОТ ЗАПУЩЕН С TIKTOK-ЭФФЕКТАМИ И ТЕКСТОМ!")
     print("=" * 60)
-    print("🎯 Параметры Telegram (VP9):")
-    print("   • WebM с кодеком VP9")
+    print("✨ 12 КРУТЫХ ЭФФЕКТОВ:")
+    for key, effect in TIKTOK_EFFECTS.items():
+        print(f"   • {effect['name']} - {effect['description']}")
+    print("=" * 60)
+    print("📝 НОВАЯ ФУНКЦИЯ:")
+    print("   • Добавление текста на видео")
+    print("   • Автоматическое форматирование")
+    print("   • Стили под каждый эффект")
+    print("=" * 60)
+    print("🎯 ПАРАМЕТРЫ TELEGRAM:")
+    print("   • WebM с VP9 кодеком")
     print("   • 30 кадров/сек")
     print("   • 512x512 пикселей")
     print("   • ≤256 КБ")
     print("   • ≤3 секунды")
     print("=" * 60)
-    print("✨ Эффекты:")
-    print("   • 🐌 Замедление")
-    print("   • ⚡ Ускорение")
-    print("   • ❄️ Снег")
-    print("   • ✨ Звёзды")
-    print("   • 🎨 Без эффекта")
-    print("=" * 60)
 
     me = await bot.get_me()
     print(f"🤖 Бот: @{me.username}")
-    print("✅ Готов к работе!")
+    print("✅ Готов к работе! Отправь видео и создай крутой стикер!")
     print("=" * 60)
 
     await dp.start_polling(bot)
